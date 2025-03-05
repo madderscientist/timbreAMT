@@ -1,0 +1,7 @@
+[CQT]
+fs = 22050
+bins_per_octave = 36
+fmin = 32.07955284  # 32.7032/2**(1/bins_per_octave)
+octaves = 8
+hop = 256
+filter_scale = 1
