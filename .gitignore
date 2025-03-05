@@ -1,0 +1,28 @@
+/文书/
+__pycache__/
+
+# 合成器相关
+/data/fluidsynth/MS Basic.sf3
+/data/fluidsynth/fluidsynth_win/
+
+# VAE数据集
+/data/vae/gen_example/
+/data/vae/example_view/
+/data/sourceMIDI/**/*.mid
+
+# AMT数据集
+/data/Bach10_v1.1-main/
+/data/PHENICX-Anechoic/
+/data/URMP/
+# 生成的数据集
+/data/septimbre/**/
+
+# 音色度量中间文件
+/data/timbreMetric/midiTimbre
+/data/timbreMetric/midiPitch
+
+# 模型评估的中间文件
+/evaluate/PHENICX_processed/
+/evaluate/URMP_processed/
+/evaluate/BACH10_processed/
+/evaluate/basicamt/
