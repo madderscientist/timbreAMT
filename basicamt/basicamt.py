@@ -14,7 +14,7 @@ class BasicAMT(nn.Module):
         self.HCQT = HarmonicaStacking(HarmonicaStacking.harmonic_shifts(harmonics-1, 1, 36), 7 * 36)
         self.early_conv = nn.Sequential(
             CBR(harmonics, 16, (5, 5), 1, "same"),
-            CBR(16, 10, kernel_size=(25, 3), dilation=(3, 1), padding="same", stride=1)
+            CBR(16, 10, kernel_size=(25, 3), dilation=(3, 1), padding=((25//2)*3, 1), stride=1)
         )
         self.neck = CBR(10 + harmonics, 18, (5, 5), 1, "same", 1)
         self.conv_yn = nn.Sequential(
@@ -64,7 +64,7 @@ class BasicAMT(nn.Module):
 class BasicAMT_all(BasicAMT):
     def __init__(self, CQTconfig, sepParams = None):
         super().__init__()
-        from CQT import CQTsmall
+        from model.CQT import CQTsmall
         if sepParams is not None:
             super().load_state_dict(sepParams)
         self.cqt = CQTsmall(
@@ -86,3 +86,29 @@ class BasicAMT_all(BasicAMT):
     def forward(self, x):
         x = self.cqt(x)
         return super().forward(x)
+
+
+class BasicAMT_44100(torch.nn.Module):
+    """
+    相比BasicAMT_all，有如下改变：
+    1. 输入为44100Hz采样率的音频，会先进行降采样到22050Hz
+    2. 把CQT的iir滤波器换成fir滤波器
+    3. 使用自己的filtfilt函数，以便于ONNX导出
+    """
+    def __init__(self, basciamt_all: BasicAMT_all):
+        super().__init__()
+        from model.CQT import CQTsmall_fir
+        self.basciamt_all = basciamt_all
+        self.cqt = CQTsmall_fir(
+            compensate = False,
+            cqtsmall_iir = basciamt_all.cqt,
+            requires_grad=True
+        )
+
+    def forward(self, x):
+        # (1, 1, time)
+        # 降采样到22050Hz（假定输出为44100Hz）
+        x = self.cqt.down2sample(x)
+        x = self.cqt(x)
+        return super(self.basciamt_all.__class__, self.basciamt_all).forward(x)
+        # (batch, 84, frame)   

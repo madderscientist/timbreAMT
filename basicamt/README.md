@@ -164,6 +164,45 @@ onset的阈值和frame的阈值是两个超参数，经测试发现：frame阈�
 
 
 
+## 导出为ONNX
+basicamt的目标是在网页上用，故需要导出为ONNX。见[use_model.ipynb](use_model.ipynb)的后半部分。
+
+torchaudio的filtfilt（在降采样CQT中用到）会导出失败，说是ONNX不支持。查看了源码(filtering.py)，发现如下代码：
+
+```py
+if _IS_TORCHAUDIO_EXT_AVAILABLE:
+    _lfilter = torch.ops.torchaudio._lfilter
+else:
+    _lfilter = _lfilter_core
+```
+
+然而并没有找到`torch.ops.torchaudio._lfilter`的定义，只看到了上方`_lfilter_core`的定义。把这段代码注释掉，强制要求`_lfilter = _lfilter_core`，发现可以导出了！但是运行结果非常糟糕，完全不对！
+
+官网说用`dynamo=True`更好，然而在进行如上操作后还是报错：`_lfilter_core_cpu_loop`不支持。发现源码：
+
+```py
+if _IS_TORCHAUDIO_EXT_AVAILABLE:
+    _lfilter_core_cpu_loop = torch.ops.torchaudio._lfilter_core_loop
+else:
+    _lfilter_core_cpu_loop = _lfilter_core_generic_loop
+```
+
+于是一样注释了源码强制选择了能看到函数定义的`_lfilter_core_generic_loop`，但运行非常非常非常非常慢！而且导出失败。如果`dynamo=False`且使用`_lfilter_core_generic_loop`，好不容易导出成功，结果文件大小高达400M，根本跑不动。
+
+经历的一切都说明torchaudio的filtfilt函数有问题。于是决定自己实现一个。刚好本来CQT中计划就是换iir为fir滤波器，而fir可以完全用conv1d实现。
+
+filtfilt基本原理参考[Matlab的filtfilt函数解析与C++实现](https://blog.csdn.net/dracula000/article/details/128199492)，大意为把输入正过来滤波、再反过来滤波、最后再反过来返回，两次滤波参数共享。难点在于边缘效应的补偿，需要两遍延长补一段数据，还有一个`zi`参数，补偿的效果是滤波结果开头和结尾的两个采样点和输入一样。具体原理没心思去了解，照猫画虎完成了补数据的部分，而`zi`则直接调用`scipy.signal`的函数`lfilter_zi`（阅读sicpy的filtfilt找到的）。
+
+单次滤波本来使用10阶的iir，经过测试发现33阶fir可以达到差不多窄的过渡带。接下来是测试效果，见[testfiltfilt.ipynb](../model/testfiltfilt.ipynb)。我震惊地发现开头结尾都没和torchaudio的filtfilt吻合，而且差别较大。我猜测可能torchaudio根本没用边缘补偿？于是写了一个两边补零、不补偿的filtfilt，然而还是相差甚远，但效果竟然也可以？看来没有必要让输入和输出的两端一样。接着我绘制了频域的幅度和相位谱，发现torchaudio的filtfilt效果非常差！不仅通带内幅度变化较大，阻带抑制也不够。要知道10阶iir的阻带抑制比33阶fir大很多！
+
+于是非常愉快地改用了自己的filtfilt，见[CQTsmall_fir](../model/CQT.py)，再次导出ONNX，一路顺风！
+
+运行ONNX时报错：`Non-zero status code returned while running Conv node. Name:'/early_conv/early_conv.1/act/Relu_output_0_nchwc' Status Message: Dilation not supported for AutoPadType::SAME_UPPER or AutoPadType::SAME_LOWER`，是dilation不支持用“same”指定padding，得明确。
+
+最后得到的是[basicamt_44100.onnx](basicamt_44100.onnx)，输入为44100Hz、shape为(1,1,time)的"audio"，输出为(1,84,frames)的"onset"和(1,84,frames)的"frame"。
+
+
+
 ## 历史模型
 当前的模型算是V4，在此前经历了如下迭代过程（具体训练结果见[history](./history/)文件夹）：
 

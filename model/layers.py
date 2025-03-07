@@ -173,8 +173,8 @@ class ChordConv_concat_half(nn.Module):
         self.convs = nn.ModuleList([
             nn.Conv2d(
                 in_channels, hidden_channels[i],
-                padding = "same",
-                dilation = (max(1, harmonics[i] * bins_per_note), 1),  # 频率方向dilation，时间方向不变
+                padding = (max(1, harmonics[i] * bins_per_note), 1),    # onnx不支持有dilation的padding="same"
+                dilation = (max(1, harmonics[i] * bins_per_note), 1),   # 频率方向dilation，时间方向不变
                 kernel_size = (3, 3),
                 bias=False
             )
