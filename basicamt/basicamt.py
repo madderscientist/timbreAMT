@@ -110,5 +110,9 @@ class BasicAMT_44100(torch.nn.Module):
         # 降采样到22050Hz（假定输出为44100Hz）
         x = self.cqt.down2sample(x)
         x = self.cqt(x)
-        return super(self.basciamt_all.__class__, self.basciamt_all).forward(x)
+        onset, note = super(self.basciamt_all.__class__, self.basciamt_all).forward(x)
+        # 减小js代码量：在模型内部归一化
+        onset /= onset.max()
+        note /= note.max()
+        return onset, note
         # (batch, 84, frame)   
