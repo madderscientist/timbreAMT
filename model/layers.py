@@ -2,6 +2,16 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+class CAT(nn.Module):
+    def __init__(self, *layers):
+        super().__init__()
+        self.layers = nn.ModuleList(layers)
+    
+    def forward(self, x):
+        outs = [layer(x) for layer in self.layers]
+        return torch.cat(outs, dim=1)
+
+
 class HarmonicaStacking(nn.Module):
     """
     Harmonica Stacking
@@ -65,6 +75,40 @@ class HarmonicaStacking_inv(HarmonicaStacking):
 
         return original
 
+"""
+补偿Harmonic Stacking中高频补零的部分。用1*1卷积核提取每个时频单元的能量，据此分配补偿的大小。
+"""
+class CompensateHS(nn.Module):
+    def __init__(self, input_channels = 8, offset = [21, 15, 12, 9, 8], layer = [5, 4, 3, 2, 1]):
+        super().__init__()
+        self.offset = offset.copy()
+        self.layer_c = layer.copy()
+        self.w = nn.ModuleList([
+           nn.Sequential(
+                nn.Conv2d(input_channels - c, 1, 1, bias=True),
+                nn.ReLU(inplace=True)
+           ) for c in layer
+        ])
+        self.adds = nn.ParameterList([
+            nn.Parameter(torch.rand(c,1,1)) for c in layer
+        ])
+
+    def forward(self, x):
+        batch, dim, note, time = x.shape
+        sum = note
+        outs = []
+        for (c, offset, w, add) in zip(self.layer_c, self.offset, self.w, self.adds):
+            channel_start = sum - offset
+            x_ = x[:, :dim - c, channel_start:sum, :]
+            weight = w(x_)
+            outs.append(torch.cat([
+                x_, add * weight    # (batch, dim, offset, time)
+            ], dim=1))
+            sum -= offset
+        outs.append(x[:, :, :sum, :])
+        outs.reverse()
+        return torch.cat(outs, dim=2)
+
 
 class CBS(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size = 3, stride = 1, padding = "same"):
@@ -92,6 +136,18 @@ class CBR(nn.Module):
         x = self.act(x)
         return x
 
+class CBLR(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size = 3, stride = 1, padding = "same", dilation = 1, padding_mode = "zeros"):
+        super().__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, dilation = dilation, padding_mode=padding_mode)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.act = nn.LeakyReLU(0.01, inplace=True)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.act(x)
+        return x
 
 class ChordConv_residual(nn.Module):
     """

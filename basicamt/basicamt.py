@@ -3,7 +3,7 @@ import torch.nn as nn
 
 import sys
 sys.path.append("..")
-from model.layers import HarmonicaStacking, ChordConv_concat_half, CBR, EnergyNorm
+from model.layers import HarmonicaStacking, CBR, EnergyNorm, CBLR
 from model.loss import AMT_loss
 
 class BasicAMT(nn.Module):
@@ -13,18 +13,17 @@ class BasicAMT(nn.Module):
         self.eng = EnergyNorm(output_type=1)
         self.HCQT = HarmonicaStacking(HarmonicaStacking.harmonic_shifts(harmonics-1, 1, 36), 7 * 36)
         self.early_conv = nn.Sequential(
-            CBR(harmonics, 16, (5, 5), 1, "same"),
+            CBLR(harmonics, 16, (5, 5), 1, "same"),
             CBR(16, 10, kernel_size=(25, 3), dilation=(3, 1), padding=((25//2)*3, 1), stride=1)
         )
         self.neck = CBR(10 + harmonics, 18, (5, 5), 1, "same", 1)
         self.conv_yn = nn.Sequential(
-            ChordConv_concat_half(18, [18, 8, 8, 10, 16], [0, 4, 5, 7, 12], 3),
-            nn.Conv2d(60, 1, (5, 5), (3, 1), (1, 2), padding_mode='replicate'),
+            nn.Conv2d(18, 1, (5, 5), (3, 1), (1, 2)),
             nn.Sigmoid()
         )
-        self.conv_yo1 = CBR(18, 17, kernel_size=(7, 3), padding=(2, 1), stride=(3, 1))
+        self.conv_yo1 = CBR(18, 7, kernel_size=(7, 3), padding=(2, 1), stride=(3, 1))
         self.conv_yo2 = nn.Sequential(
-            nn.Conv2d(18, 1, kernel_size=(5, 5), stride=1, padding="same"),
+            nn.Conv2d(8, 1, kernel_size=(3, 5), stride=1, padding="same"),
             nn.Sigmoid()
         )
 
@@ -64,17 +63,18 @@ class BasicAMT(nn.Module):
 class BasicAMT_all(BasicAMT):
     def __init__(self, CQTconfig, sepParams = None):
         super().__init__()
-        from model.CQT import CQTsmall
+        from model.CQT import CQTsmall_fir
         if sepParams is not None:
             super().load_state_dict(sepParams)
-        self.cqt = CQTsmall(
-            CQTconfig['fs'],
-            fmin=CQTconfig['fmin'],
-            octaves=CQTconfig['octaves'],
-            bins_per_octave=CQTconfig['bins_per_octave'],
-            hop=CQTconfig['hop'],
-            filter_scale=CQTconfig['filter_scale'],
-            requires_grad=True
+        self.cqt = CQTsmall_fir(
+            False,
+            fs = CQTconfig['fs'],
+            fmin = CQTconfig['fmin'],
+            octaves = CQTconfig['octaves'],
+            bins_per_octave = CQTconfig['bins_per_octave'],
+            hop = CQTconfig['hop'],
+            filter_scale = CQTconfig['filter_scale'],
+            requires_grad = True
         )
 
     def sep_params(self):
@@ -90,27 +90,17 @@ class BasicAMT_all(BasicAMT):
 
 class BasicAMT_44100(torch.nn.Module):
     """
-    相比BasicAMT_all，有如下改变：
-    1. 输入为44100Hz采样率的音频，会先进行降采样到22050Hz
-    2. 把CQT的iir滤波器换成fir滤波器
-    3. 使用自己的filtfilt函数，以便于ONNX导出
+    相比BasicAMT_all，输入为44100Hz采样率的音频，会先进行降采样到22050Hz
     """
     def __init__(self, basciamt_all: BasicAMT_all):
         super().__init__()
-        from model.CQT import CQTsmall_fir
-        self.basciamt_all = basciamt_all
-        self.cqt = CQTsmall_fir(
-            compensate = False,
-            cqtsmall_iir = basciamt_all.cqt,
-            requires_grad=True
-        )
+        self.basicamt_all = basciamt_all
 
     def forward(self, x):
         # (1, 1, time)
         # 降采样到22050Hz（假定输出为44100Hz）
-        x = self.cqt.down2sample(x)
-        x = self.cqt(x)
-        onset, note = super(self.basciamt_all.__class__, self.basciamt_all).forward(x)
+        x = self.basicamt_all.cqt.down2sample(x)
+        onset, note = self.basicamt_all(x)
         # 减小js代码量：在模型内部归一化
         onset /= onset.max()
         note /= note.max()

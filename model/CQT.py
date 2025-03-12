@@ -200,10 +200,11 @@ class FIRfiltfilt(nn.Module):
             right_padding = fir_len - 1 - left_padding
             self.padding = nn.ZeroPad1d((left_padding, right_padding))
             self.filtfilt = self.filtfilt_v2
-        
+
     def forward(self, x):
-        return self.filtfilt(x)
-    
+        channels = [self.filtfilt(x[:, i:i+1]) for i in range(x.size(1))]
+        return torch.cat(channels, dim=1)
+
     @staticmethod
     def signal_extend(sig, nfact):
         """
