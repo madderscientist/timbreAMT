@@ -28,6 +28,7 @@ __pycache__/
 /evaluate/URMP_processed/
 /evaluate/BACH10_processed/
 /evaluate/basicamt/
+/evaluate/basicpitch/
 
 # 测试文件夹
 /test/
