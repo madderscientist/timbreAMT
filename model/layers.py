@@ -3,13 +3,14 @@ import torch.nn as nn
 import numpy as np
 
 class CAT(nn.Module):
-    def __init__(self, *layers):
+    def __init__(self, *layers, dim=1):
         super().__init__()
         self.layers = nn.ModuleList(layers)
+        self.dim = dim
     
     def forward(self, x):
         outs = [layer(x) for layer in self.layers]
-        return torch.cat(outs, dim=1)
+        return torch.cat(outs, dim=self.dim)
 
 
 class HarmonicaStacking(nn.Module):
@@ -111,9 +112,9 @@ class CompensateHS(nn.Module):
 
 
 class CBS(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size = 3, stride = 1, padding = "same"):
+    def __init__(self, in_channels, out_channels, kernel_size = 3, stride = 1, padding = "same", dilation = 1, padding_mode = "zeros"):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False)
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, dilation = dilation, padding_mode=padding_mode)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.SiLU(inplace=True)
 

@@ -8,13 +8,24 @@ SIGMA_SCALE = 2   # 方差遵循2sigma准则 保证绝大多数数据在范围�
 CHORDS = [4, 5, 7, 12]  # 泛音会重叠的
 
 class Notes:
-    def __init__(self, octave_weight = OCTAVE_WEIGHT, len_range = LEN_RANGE, len_mean = LEN_MEAN, len_sigma = -1):
+    def __init__(
+            self,
+            octave_weight = OCTAVE_WEIGHT,
+            len_range = LEN_RANGE,
+            len_mean = LEN_MEAN,
+            len_sigma = -1,
+            offset_mean = None,
+        ):
         self.octave_weight = list(octave_weight)
         self.note_num = len(octave_weight) * 12
         self.len_range = tuple(len_range)  # 每个音符的长度范围
         self.len_mean = len_mean    # 每个音符的平均长度
         self.len_sigma = len_sigma if len_sigma > 0 else (len_mean - len_range[0]) / SIGMA_SCALE
         self.init_len_dist()
+        if offset_mean is None:
+            self.offset_mean = -self.len_range[0]
+        else:
+            self.offset_mean = offset_mean
         self.notes = []
 
     def init_len_dist(self):
@@ -105,7 +116,7 @@ class Notes:
             (-last_note[2] - 0.5) / self.len_sigma, # 保证本音符不会在上一个音符前面
             # 最大空余设置成平均音长的一半了，因为这样能更密集
             (self.len_mean / 2 + 0.5) / self.len_sigma, # 0.5因为round是四舍五入，需要补偿边沿
-            loc=-self.len_range[0],
+            loc=self.offset_mean,
             scale=self.len_sigma
         )
         offset = int(round(offset_dist.rvs()))

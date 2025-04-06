@@ -57,13 +57,9 @@ class HebbAttention(nn.Module):
 用核函数的线性注意力
 """
 class LinearAttention(nn.Module):
-    def __init__(self, emb_in = 0, emb_out = 0, dropout = 0.05):
+    def __init__(self):
         super().__init__()
-        if emb_in > 0:
-            self.linear = nn.Linear(emb_in, emb_out)
-            self.dropout = nn.Dropout(dropout)
-        else:
-            self.linear = None
+        self.scaleK=nn.Parameter(torch.tensor(1.), requires_grad=True)
 
 
     def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
@@ -80,8 +76,7 @@ class LinearAttention(nn.Module):
 
         # 使用 ELU 激活函数对Q和K进行高维映射，并加1以确保非负
         phi_Q = F.elu(Q) + 1
-        phi_K = F.elu(K) + 1
-
+        phi_K = F.elu(K*self.scaleK) + 1
 
         # 计算 K 和 V 的乘积
         KV = torch.matmul(phi_K.transpose(-2, -1), V)
@@ -96,11 +91,7 @@ class LinearAttention(nn.Module):
         # 计算新的 V 值
         V_new = torch.matmul(phi_Q, KV) * Z # (batch_size, freq * time, dim)
 
-        if self.linear:
-            V_new = self.linear(V_new)
-            V_new = self.dropout(V_new)
-
-        return V_new.permute(0, 2, 1).view(B, -1, FreqNum, TimeNum)
+        return V_new.permute(0, 2, 1).view(B, Dim, FreqNum, TimeNum)
 
 """
 清华的流注意力，同样线性，有竞争机制

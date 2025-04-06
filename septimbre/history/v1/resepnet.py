@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import sys
 sys.path.append("..")
 from model.layers import HarmonicaStacking, CBR, EnergyNorm, CBS, CBLR
-from model.loss import AMT_loss, cluster_loss
+from model.loss import focal_loss, cluster_loss
 from model.attention import FlowAttention, FreqPosEncoding
 
 
@@ -26,11 +26,6 @@ class Cluster(nn.Module):
         self.compensate = FreqPosEncoding(24, 84 * 3)
         self.mask = nn.Sequential(
             nn.Conv2d(25, 1, (5, 5), (3, 1), (1, 2)),
-            nn.Sigmoid()
-        )
-        self.onset_pre = CBR(25, 6, kernel_size=(7, 3), padding=(2, 1), stride=(3, 1))
-        self.onset = nn.Sequential(
-            nn.Conv2d(7, 1, kernel_size=(3, 5), stride=1, padding="same"),
             nn.Sigmoid()
         )
         self.FA = FlowAttention(emb_dims, emb_dims, 1, drop_out=0.05, eps=1e-6)
@@ -57,33 +52,36 @@ class Cluster(nn.Module):
         neck = self.neck(early_conv)
         # neck: (batch, 24, 7*36, len)
 
-        neck_with_eng = torch.cat((neck, neck.pow(2).sum(dim=1, keepdim=True)), dim=1)
-        mask = self.mask(neck_with_eng)
-        onset = self.onset_pre(neck_with_eng)
-        onset = torch.cat((onset, mask), dim=1)
-        onset = self.onset(onset)
+        mask = torch.cat((neck, neck.pow(2).sum(dim=1, keepdim=True)), dim=1)
+        mask = self.mask(mask)
 
         # 不进行归一化不好。
         neck = self.compensate(neck)
-        emb = self.FA(
-            self.emb_Q(neck),
-            masknorm(self.emb_K(neck), mask, True),
-            masknorm(self.emb_V(neck), mask, True)
-        ) + self.emb(neck)
+        emb = self.FA(self.emb_Q(neck), masknorm(self.emb_K(neck), mask, True), masknorm(self.emb_V(neck), mask, True)) + self.emb(neck)
         emb = masknorm(emb)
-        return emb, mask.squeeze(1), onset.squeeze(1)
+        return emb, mask.squeeze(1)
+        # emb = self.emb(neck)    # 如果只有这一个而没有attention会导致分错类
+        # 只有attention没有残差，如果带上了mask会导致都不拟合；不带上mask效果一般
+        # 不进行归一化不好
+        # emb_norm = masknorm(emb, mask)
+        # emb = self.FA(emb, emb, emb)    # 如果mask作用在这里会严重影响结果    # 如果都是emb也会导致分类结果错误
+        # emb = self.FA(self.emb_Q(neck), self.emb_K(neck), self.emb_V(neck)) + self.emb(neck)  # 不如上一个加了norm的
+        # emb = self.FFN(emb) + emb # 不如不加
 
     @staticmethod
-    def loss(emb, mask, onset, targets):
+    def loss(emb, mask, targets):
         """
         计算聚类损失和AMT损失
         emb: (batch, emb_dims, 7*12, time)
         mask: (batch, 7*12, time)
-        onset: (batch, 7*12, time)
         targets: (batch, mix, freqs, time)
         """
-        L_cluster = cluster_loss(emb, targets, 2)
-        L_amt = AMT_loss(onset, mask, targets.max(dim=-3, keepdim=False).values, False)
+        L_cluster = cluster_loss(emb, targets)
+        L_amt = focal_loss(
+            (targets.max(dim=-3, keepdim=False).values > 0).float(),
+            mask,
+            gamma=1, alpha=0.2
+        )
         return L_cluster, L_amt    # 聚类损失太大了，权重放在训练脚本中当超参数调节
 
 
@@ -119,3 +117,29 @@ def masknorm(x, mask = None, mask_norm = False):
             return x * mask / (amp * mask_sum)
         else:
             return x * mask / amp
+
+
+class Squash(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, x):
+        eng = x.pow(2).sum(dim=1, keepdim=True)
+        return eng/(1+eng) * x / torch.sqrt(eng + 1e-8)
+
+class Normalize(nn.Module):
+    def __init__(self):
+        super().__init__()
+    def forward(self, x):
+        eng = x.pow(2).sum(dim=1, keepdim=True)
+        return x / torch.sqrt(eng + 1e-8)
+
+
+class ReSepNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+
+if __name__ == "__main__":
+    model = Cluster()
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"Total number of parameters: {total_params}")

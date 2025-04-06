@@ -31,15 +31,25 @@ def cutWave(input_wavefile: str, output_wavefile: str, start_time: float, end_ti
             else:
                 wave_write.writeframes(frames)
 
-def waveInfo(wavefile: str):
+def waveInfo(wavefile: str, verbose: bool = True):
     """获取wave文件的信息"""
     with wave.open(wavefile, 'rb') as file:
         nFrames = file.getnframes()
         frameRate = file.getframerate()
         sampleWidth = file.getsampwidth()
-        print("Sample rate:", frameRate)
-        print("Channels:", file.getnchannels())
-        print("Sample width:", sampleWidth)
-        print("Number of frames:", nFrames)
-        print("Duration (s):", nFrames / frameRate)
-        print("data num:", int(len(file.readframes(nFrames))/sampleWidth))
+        info = {
+            "sample_rate": frameRate,
+            "channels": file.getnchannels(),
+            "sample_width": sampleWidth,
+            "num_frames": nFrames,
+            "duration": nFrames / frameRate,
+            "data_num": int(len(file.readframes(nFrames)) / sampleWidth)
+        }
+        if verbose:
+            print("Sample rate:", info["sample_rate"])
+            print("Channels:", info["channels"])
+            print("Sample width:", info["sample_width"])
+            print("Number of frames:", info["num_frames"])
+            print("Duration (s):", info["duration"])
+            print("data num:", info["data_num"])
+        return info
