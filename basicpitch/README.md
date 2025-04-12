@@ -25,7 +25,7 @@ basicpitch没有将CQT纳入训练参数中，为了比较公平我用了我的C
 但我的loss也有自己的问题：阈值明显低于basicpitch。也许用了后处理后其实效果差不多呢？况且onset在我看来最大的用途就是断开连续的音，因此就不测评了。最重要的还是帧级指标。
 
 ### 客观数据
-基本是吊着打了？
+基本是吊着打了？除去CQT，我的参数量只有BasicPitch的一半，但效果相当。
 
 <table>
     <tr>
@@ -132,6 +132,6 @@ basicpitch没有将CQT纳入训练参数中，为了比较公平我用了我的C
     </tr>
     <tr>
         <td>参数量</td>
-        <td>CQT<br>19944</td><td>56517</td> <td>46564</td>
+        <td>CQT<br>19944</td><td>56517<br>不含CQT</td> <td>46564<br>含CQT</td>
     </tr>
 </table>
