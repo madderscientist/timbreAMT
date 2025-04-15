@@ -415,7 +415,7 @@ def freq_map(note_range: Tuple[int, int] = (24, 107), A4: float = 440):
 
 def roll2evalarray(roll: np.ndarray, freq_map: np.ndarray) -> List[np.ndarray]:
     """
-    Convert a piano roll (0 or 1) to an array of note values which mir_eval reqires.
+    Convert a piano roll (0 or 1(greater than 0)) to an array of note values which mir_eval reqires.
     :param roll: The piano roll to convert, which has been binarized. [F, T]
     :param freq_map: The frequency map to convert the piano roll to note values. [F]
     :return: The array of note values. [np.array]*T
