@@ -39,7 +39,8 @@ def output_to_notes_polyphonic(
     infer_onsets: bool = True,
     melodia_trick: bool = True,
     energy_tol: int = 12,
-    midi_offset = 24
+    midi_offset = 24,
+    neighbor_trick = True
 ) -> List[Tuple[int, int, int, float]]:
     """Decode raw model output to polyphonic note events
 
@@ -50,9 +51,10 @@ def output_to_notes_polyphonic(
         frame_thresh: Minimum amplitude of a frame activation for a note to remain "on".
         min_note_len: Minimum allowed note length in frames.
         infer_onsets: If True, add additional onsets when there are large differences in frame amplitudes.
-        melodia_trick : Whether to use the melodia trick to better detect notes.
+        melodia_trick : Whether to use the melodia trick to better detect notes. 不依赖onset，根据frames中的极大值找额外的音符
         energy_tol: Drop notes below this energy.
         midi_offset: 从idx映射到midi音符编码的偏移
+        neighbor_trick: 确认为音符后是否将相邻半音清空
 
     Returns:
         list of tuples [(start_time_frames, end_time_frames, pitch_midi, amplitude)]
@@ -102,10 +104,11 @@ def output_to_notes_polyphonic(
         # 确定是音符了，把对应的强度置零
         freqArray[note_start_idx:i] = 0
         # 下面这段大概是认为半音不会同时出现。确实有一定合理性
-        if freq_idx < 83:
-            remaining_energy[freq_idx + 1, note_start_idx:i] = 0
-        if freq_idx > 0:
-            remaining_energy[freq_idx - 1, note_start_idx:i] = 0
+        if neighbor_trick:
+            if freq_idx < 83:
+                remaining_energy[freq_idx + 1, note_start_idx:i] = 0
+            if freq_idx > 0:
+                remaining_energy[freq_idx - 1, note_start_idx:i] = 0
 
         # 取平均强度为其音符力度
         amplitude = np.mean(frames[freq_idx, note_start_idx:i])
@@ -155,10 +158,11 @@ def output_to_notes_polyphonic(
                     k = 0
 
                 freqArray[i] = 0
-                if freq_idx < 83:
-                    remaining_energy[freq_idx + 1, i] = 0
-                if freq_idx > 0:
-                    remaining_energy[freq_idx - 1, i] = 0
+                if neighbor_trick:
+                    if freq_idx < 83:
+                        remaining_energy[freq_idx + 1, i] = 0
+                    if freq_idx > 0:
+                        remaining_energy[freq_idx - 1, i] = 0
 
                 i -= 1
 
