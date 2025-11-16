@@ -1,3 +1,4 @@
+
 """
     const Q transform for pytorch
     principle: https://zhuanlan.zhihu.com/p/716574483
@@ -10,7 +11,7 @@ from torchaudio.functional import filtfilt
 import numpy as np
 import scipy.signal as signal
 
-def createCQTkernel(Q, fs, fmin, n_bins, bins_per_octave = 12):
+def createCQTkernel(Q, fs, fmin, n_bins, bins_per_octave = 12) -> tuple[np.ndarray, int]:
     n_bins = int(n_bins)
     bins_per_octave = int(bins_per_octave)
     # frequency list of all bins
@@ -29,12 +30,12 @@ def createCQTkernel(Q, fs, fmin, n_bins, bins_per_octave = 12):
         tempKernel[k, start : start + l] = window / np.sum(window) * np.exp(1j * 2 * np.pi * np.r_[-l//2+1 : l//2+1] * freqs[k] / fs)
     return tempKernel, max_len
 
-def createCQTkernel_fit(Q, fs, fmin, n_bins, bins_per_octave = 12):
+def createCQTkernel_fit(Q, fs, fmin, n_bins, bins_per_octave = 12) -> tuple[list[np.ndarray], np.ndarray]:
     n_bins = int(n_bins)
     bins_per_octave = int(bins_per_octave)
     freqs = fmin * 2.0 ** (np.r_[0:n_bins] / np.double(bins_per_octave))
     lengths = np.ceil(Q * fs / freqs)
-    tempKernel = [None] * n_bins
+    tempKernel: list[np.ndarray] = []
     lens = np.zeros(n_bins, dtype=int)
     for k in range(0, n_bins):
         l = int(lengths[k])
@@ -44,7 +45,8 @@ def createCQTkernel_fit(Q, fs, fmin, n_bins, bins_per_octave = 12):
         lens[k] = l
         window = signal.get_window('blackmanharris', l, fftbins=False)
         # 对window进行归一化后作用于旋转因子 保证相位0在中心
-        tempKernel[k] = window / np.sum(window) * np.exp(1j * 2 * np.pi * np.r_[-l//2+1 : l//2+1] * freqs[k] / fs)
+        kernel = window / np.sum(window) * np.exp(1j * 2 * np.pi * np.r_[-l//2+1 : l//2+1] * freqs[k] / fs)
+        tempKernel.append(kernel)
     return tempKernel, lens
 
 def audio_input(x):
@@ -126,24 +128,26 @@ class CQT_fit(nn.Module):
 
 """基于降采样的CQT 参数量小 推荐使用 更推荐用后面的CQTsmall_fir"""
 class CQTsmall(nn.Module):
-    def __init__(self, fs, fmin, octaves, bins_per_octave, hop, filter_scale=1, requires_grad = True):
+    def __init__(self, fs, fmin, octaves, bins_per_octave, hop, filter_scale=1., requires_grad = True):
         super().__init__()
         CQTsmall.init(self, fs, fmin, octaves, bins_per_octave, hop, filter_scale, requires_grad)
         # 之后考虑换成FIR滤波器【已更换，在CQTsmall_fir类中】
         iir = signal.iirfilter(10, 0.48, btype='low', ftype='butter', output='ba')
+        if iir is None:
+            raise ValueError("IIR filter design failed")
         self.iir_num = nn.Parameter(torch.tensor(iir[0], dtype=torch.float32), requires_grad=False)
         self.iir_den = nn.Parameter(torch.tensor(iir[1], dtype=torch.float32), requires_grad=False) # 分母不方便变，不稳定
     
     def forward(self, x):
         x = audio_input(x)
-        pad = self.width // 2
+        pad = self.width // 2   # type: ignore
         hop = self.hop
-        firstOctave = conv1d(x, self.cqt_kernels, stride=hop, padding=pad)
+        firstOctave = conv1d(x, self.cqt_kernels, stride=hop, padding=pad) # type: ignore
         CQT_results = [firstOctave.view(firstOctave.size(0), 2, self.bins_per_octave, -1)]
-        for i in range(1, self.octaves):
-            hop = hop // 2
+        for i in range(1, self.octaves): # type: ignore
+            hop = hop // 2 # type: ignore
             x = self.down2sample(x)
-            CQT_result = conv1d(x, self.cqt_kernels, stride=hop, padding=pad)
+            CQT_result = conv1d(x, self.cqt_kernels, stride=hop, padding=pad) # type: ignore
             CQT_results.insert(0, CQT_result.view(CQT_result.size(0), 2, self.bins_per_octave, -1))
         return torch.cat(CQT_results, dim=2)
 
@@ -154,17 +158,18 @@ class CQTsmall(nn.Module):
         return self.anti_aliasing_filter(x)[:, :, ::2]
 
     @staticmethod
-    def init(obj, fs, fmin, octaves, bins_per_octave, hop, filter_scale=1, requires_grad = True):
-        obj.fs = fs
-        obj.fmin = fmin
-        obj.bins_per_octave = int(bins_per_octave)
-        obj.octaves = int(octaves)
-        obj.n_bins = int(octaves * bins_per_octave)
+    def init(obj: nn.Module, fs: int, fmin: float, octaves: int, bins_per_octave: int, hop: int, filter_scale: float = 1, requires_grad: bool = True):
+        object.__setattr__(obj, 'fs', fs)
+        object.__setattr__(obj, 'fmin', fmin)
+        object.__setattr__(obj, 'bins_per_octave', int(bins_per_octave))
+        object.__setattr__(obj, 'octaves', int(octaves))
+        object.__setattr__(obj, 'n_bins', int(octaves * bins_per_octave))
         freqMul = 2 ** (octaves - 1)
-        obj.hop = int(max(1, round(hop / freqMul)) * freqMul)
+        object.__setattr__(obj, 'hop', int(max(1, round(hop / freqMul)) * freqMul))
         fmin_max = fmin * freqMul    # 最高八度的最低频率
         Q = float(filter_scale) / (2 ** (1 / bins_per_octave) - 1)
-        cqt_kernels, obj.width = createCQTkernel(Q, fs, fmin_max, bins_per_octave, bins_per_octave)
+        cqt_kernels, width = createCQTkernel(Q, fs, fmin_max, bins_per_octave, bins_per_octave)
+        object.__setattr__(obj, 'width', width)
         obj.cqt_kernels = nn.Parameter(
             torch.cat((
                 torch.tensor(np.real(cqt_kernels), dtype=torch.float32),
@@ -256,12 +261,12 @@ class FIRfiltfilt(nn.Module):
     用了自己的filtfilt实现，因为torchaudio的filtfilt有问题
 """
 class CQTsmall_fir(nn.Module):
-    def __init__(self, compensate = False, **kwargs):
+    def __init__(self, compensate = False, requires_grad = False, **kwargs):
         """
         :param compensate: 是否使用补偿的filtfilt
+        :param requires_grad: 是否需要梯度
         第一种构造方法：从CQTsmall构造：
             :param cqtsmall_iir: CQTsmall的实例
-            :param requires_grad: 是否需要梯度
         第二种构造方法：直接构造：
             :param fs: 采样率
             :param fmin: 最低频率
@@ -269,13 +274,26 @@ class CQTsmall_fir(nn.Module):
             :param bins_per_octave: 每个八度的频率数
             :param hop: 跳跃长度
             :param filter_scale: 滤波器的scale
-            :param requires_grad: 是否需要梯度
+        第三种构造方法: 用config
+            :param config: 包含第二种构造方法所需参数的对象
         """
         super().__init__()
         if 'cqtsmall_iir' in kwargs:
-            self.from_CQTsmall_iir(**kwargs)
+            self.from_CQTsmall_iir(requires_grad=requires_grad, **kwargs)
+        elif 'config' in kwargs:
+            config = kwargs.pop('config')
+            CQTsmall.init(
+                self,
+                fs = getattr(config, "fs", None) or config["fs"],
+                fmin = getattr(config, "fmin", None) or config["fmin"],
+                octaves = getattr(config, "octaves", None) or config["octaves"],
+                bins_per_octave = getattr(config, "bins_per_octave", None) or config["bins_per_octave"],
+                hop = getattr(config, "hop", None) or config["hop"],
+                filter_scale = getattr(config, "filter_scale", 1) or config.get("filter_scale", 1),
+                requires_grad=requires_grad
+            )
         else:
-            CQTsmall.init(self, **kwargs)
+            CQTsmall.init(self, requires_grad=requires_grad, **kwargs)
 
         # 创建fir滤波器 不参与训练
         self.filtfilt = FIRfiltfilt(
@@ -292,19 +310,19 @@ class CQTsmall_fir(nn.Module):
         self.n_bins = cqtsmall_iir.n_bins
         self.hop = cqtsmall_iir.hop
         self.width = cqtsmall_iir.width
-        self.cqt_kernels = nn.Parameter(cqtsmall_iir.cqt_kernels.clone().detach(), requires_grad=requires_grad)
+        self.cqt_kernels = nn.Parameter(cqtsmall_iir.cqt_kernels.clone().detach(), requires_grad=requires_grad) # type: ignore
         return self
 
     def forward(self, x):
         x = audio_input(x)  # (batch, 1, len)
-        pad = self.width // 2
+        pad = self.width // 2 # type: ignore
         hop = self.hop
-        firstOctave = conv1d(x, self.cqt_kernels, stride=hop, padding=pad)
+        firstOctave = conv1d(x, self.cqt_kernels, stride=hop, padding=pad) # type: ignore
         CQT_results = [firstOctave.view(firstOctave.size(0), 2, self.bins_per_octave, -1)]
-        for i in range(1, self.octaves):
-            hop = hop // 2
+        for i in range(1, self.octaves): # type: ignore
+            hop = hop // 2 # type: ignore
             x = self.down2sample(x)
-            CQT_result = conv1d(x, self.cqt_kernels, stride=hop, padding=pad)
+            CQT_result = conv1d(x, self.cqt_kernels, stride=hop, padding=pad) # type: ignore
             CQT_results.append(CQT_result.view(CQT_result.size(0), 2, self.bins_per_octave, -1))
         CQT_results.reverse()
         return torch.cat(CQT_results, dim=2)

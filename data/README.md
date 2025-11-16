@@ -19,6 +19,7 @@
 |
 | 以下是公共数据集，已ignore。详情见“~/evaluate/”文件夹下的预处理脚本
 ├─Batch10_v1.1-main
+├─musicnet
 ├─PHENICX-Anechoic
 └─URMP
 ```
@@ -93,7 +94,7 @@ http://www.360doc.com/content/24/0307/10/2616079_1116394138.shtml
 ## midi编码{#midi}
 ### 音色
 下面是midi定义中的所有音色，并且根据我的人耳区分度对音色进行了区分
-
+```
 0	Acoustic Grand Piano 大钢琴（声学钢琴）
 1	Bright Acoustic Piano 明亮的钢琴
 2	Electric Grand Piano 电钢琴
@@ -270,6 +271,7 @@ http://www.360doc.com/content/24/0307/10/2616079_1116394138.shtml
 109	Bagpipe 风笛
 110	Fiddle 民族提琴
 111	Shanai 山奈
+```
 
 ### 音高与编码
 音名|频率|编号

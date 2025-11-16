@@ -1,4 +1,4 @@
-from typing import *
+from typing import List, Tuple, Union
 import numpy as np
 import scipy.signal
 

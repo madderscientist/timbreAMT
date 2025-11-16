@@ -8,15 +8,35 @@
 │  fluidsynth.py    Synth类
 │  MS Basic.sf3     来自Musescore4的soundfont文件 最大
 │  gnusmas_gm_soundfont_2.01.sf3     来自https://github.com/Gnusmas49/gnusmas-soundfonts
-│  MS Basic.sf3     来自Musescore1的soundfont文件 很小
+│  TimGM6mb.sf2     来自Musescore1的soundfont文件 很小
 │  readme.md
 │  __init__.py      模块声明
-│  (deprecated)synth.py 废弃的慢速版本
 │
+├─fluidsynth_linux  linux下的fluidsynth，没有子文件夹，包含fluidsynth.so.3.5.0
 └─fluidsynth_win    windows下的fluidsynth，没有子文件夹，包含fluidsynth.exe和各种dll
 ```
 
 若要在别的平台使用，应该更换fluidsynth_win为对应操作系统的release，并且修改代码开头的路径部分
+
+> fluidsynth on Windows:
+> down load and unzip https://github.com/FluidSynth/fluidsynth/releases
+
+> Compile fluidsynth on Linux:
+> ```
+> git clone https://github.com/FluidSynth/fluidsynth.git
+> cd fluidsynth
+> mkdir build
+> cd build
+> sudo apt install libglib2.0-dev
+> sudo apt install build-essential cmake \
+>   libsndfile1-dev libjack-jackd2-dev \
+>   libreadline-dev libasound2-dev \
+>   libpulse-dev libglib2.0-dev \
+>   pkg-config
+> make
+> ```
+
+本项目提供了一个编译好的linux x64 fluidsynth.so.3.5.0
 
 ## Usage
 ```py

@@ -3,25 +3,29 @@ import torch.nn as nn
 
 import sys
 sys.path.append("..")
-from model.layers import HarmonicaStacking, CBR, EnergyNorm, CBLR
+from model.layers import HarmonicaStacking, CBR, CBLR, EnergyNorm
 from model.loss import AMT_loss
 
 class BasicAMT(nn.Module):
     def __init__(self):
         super().__init__()
         harmonics = 8
-        self.eng = EnergyNorm(output_type=1)
+        self.eng = EnergyNorm(output_type=1, log_scale=True)
+        self.k = nn.Parameter(torch.tensor(1.0), requires_grad=True)
+        self.b = nn.Parameter(torch.tensor(0.0), requires_grad=True)
         self.HCQT = HarmonicaStacking(HarmonicaStacking.harmonic_shifts(harmonics-1, 1, 36), 7 * 36)
         self.early_conv = nn.Sequential(
             CBLR(harmonics, 16, (5, 5), 1, "same"),
-            CBR(16, 10, kernel_size=(25, 3), dilation=(3, 1), padding=((25//2)*3, 1), stride=1)
+            nn.Conv2d(16, 8, kernel_size=(25, 3), dilation=(3, 1), padding=((25//2)*3, 1), stride=1),
+            nn.BatchNorm2d(8),
         )
-        self.neck = CBR(10 + harmonics, 18, (5, 5), 1, "same", 1)
+        self.res = nn.ReLU(inplace=True)
+        self.neck = CBR(8, 16, (5, 5), 1, "same", 1)
         self.conv_yn = nn.Sequential(
-            nn.Conv2d(18, 1, (5, 5), (3, 1), (1, 2)),
+            nn.Conv2d(16, 1, kernel_size=(5, 5), stride=(3, 1), padding=(1, 2)),
             nn.Sigmoid()
         )
-        self.conv_yo1 = CBR(18, 7, kernel_size=(7, 3), padding=(2, 1), stride=(3, 1))
+        self.conv_yo1 = CBR(16, 7, kernel_size=(7, 3), padding=(2, 1), stride=(3, 1))
         self.conv_yo2 = nn.Sequential(
             nn.Conv2d(8, 1, kernel_size=(3, 5), stride=1, padding="same"),
             nn.Sigmoid()
@@ -30,17 +34,16 @@ class BasicAMT(nn.Module):
 
     def forward(self, x):
         # x: (batch, 2, 8*36, len)
-        eng = self.eng(x)
+        eng = self.eng(x) * self.k + self.b
         # eng: (batch, 1, 8*36, len)
         stacked = self.HCQT(eng)
         # stacked: (batch, 8, 7*36, len)
         early_conv = self.early_conv(stacked)
-        # early_conv: (batch, 10, 7*36, len)
+        # early_conv: (batch, 8, 7*36, len)
 
-        early_conv = torch.concat((stacked, early_conv), dim=1)
-        # early_conv: (batch, 18, 7*36, len)
-        neck = self.neck(early_conv)
-        # neck: (batch, 18, 7*36, len)
+        res = self.res(early_conv + stacked)
+        neck = self.neck(res)
+        # neck: (batch, 8, 7*36, len)·
 
         yn = self.conv_yn(neck)
         # yn: (batch, 1, 7*12, len)
@@ -53,6 +56,10 @@ class BasicAMT(nn.Module):
         # yo: (batch, 1, 7*12, len)
         return yo.squeeze(1), yn.squeeze(1)
         # (batch, 7*12, len)
+    
+    def clampK(self, min=0.005, max=3.0):
+        with torch.no_grad():
+            self.k.clamp_(min, max)
 
     ##########################损失相关############################
     @staticmethod
@@ -61,7 +68,7 @@ class BasicAMT(nn.Module):
 
 
 class BasicAMT_all(BasicAMT):
-    def __init__(self, CQTconfig, sepParams = None):
+    def __init__(self, CQTconfig, sepParams = None, CQTlearnable = True):
         super().__init__()
         from model.CQT import CQTsmall_fir
         if sepParams is not None:
@@ -74,7 +81,7 @@ class BasicAMT_all(BasicAMT):
             bins_per_octave = CQTconfig['bins_per_octave'],
             hop = CQTconfig['hop'],
             filter_scale = CQTconfig['filter_scale'],
-            requires_grad = True
+            requires_grad = CQTlearnable
         )
 
     def sep_params(self):

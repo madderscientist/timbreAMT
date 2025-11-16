@@ -7,7 +7,7 @@
 乐器事件不在头文件，而是每个有音符的音轨
 """
 
-from typing import Union, List, Tuple
+from typing import Union, List, Tuple, Optional
 import mido
 import numpy as np
 
@@ -120,7 +120,7 @@ def numpy2midi(
         time_first: bool = False,
         min_note: int = 24,
         random: bool = False,
-        instrument: int = 0
+        instrument: Union[int, List[int]] = 0
     ) -> mido.MidiFile:
     """
     arr: numpy数组, 第一维tracks可省略, shape=(tracks, num_time_steps, num_notes) if time_first else (tracks, num_notes, num_time_steps)
@@ -204,11 +204,33 @@ def numpy2midi(
     return mid
 
 
+def midiInstruments(
+        midi_file: Union[str, mido.MidiFile]
+    ) -> List[int]:
+    """
+    获取midi文件中使用的乐器编号
+    midi_file: midi文件路径 或者 mido.MidiFile对象
+    return: 乐器编号列表 如果某个音轨没有乐器事件则设置为0
+    """
+    mid = mido.MidiFile(midi_file) if isinstance(midi_file, str) else midi_file
+    instruments = []
+    for track in mid.tracks:
+        has_instrument = False
+        for m in track:
+            if m.type == 'program_change':
+                instruments.append(m.program)
+                has_instrument = True
+                break
+        if not has_instrument:
+            instruments.append(0)  # 如果没有找到乐器，默认添加0
+    return instruments
+
+
 def annotation2midi(
         path: str,
         cols: list = ["note", "freq", "name", "onset", "dur", "offset"],
         row_offset: int = 0,
-        sep: str = None,
+        sep: Optional[str] = None,
         time_unit: float = 1.,
         instrument: int = 0
     ) -> mido.MidiFile:
@@ -380,7 +402,7 @@ def midi_merge(midis: List[mido.MidiFile]) -> mido.MidiFile:
     return mid
 
 
-def hz2note(hz: int, A4=440) -> int:
+def hz2note(hz: float, A4=440) -> int:
     """
     将频率转换为midi编码的音符
     """
@@ -482,6 +504,125 @@ def midi_randomize(
     return mid
 
 
+def array2notes(
+        arr: np.ndarray,
+    ) -> List[List[Tuple[int, int, int]]]:
+    """将numpy数组转换为音符列表
+
+    Args:
+        arr: numpy数组, shape=(num_tracks, num_notes, num_time_steps) or (num_notes, num_time_steps)
+        time_step: float 时间步长，单位秒
+    
+    Returns:
+        音符列表的列表, 每一项代表一个音轨, 每个音轨由多个音符组成, 每个音符由(onset, offset, note)组成，时间单位为frame index
+    """
+    if arr.ndim == 2:
+        arr = np.expand_dims(arr, axis=0)
+    notes_list = []
+    for piano_roll in arr:
+        # piano_roll: shape=(num_notes, num_time_steps)
+        notes = []
+        for (note, line) in enumerate(piano_roll):
+            # note: shape=(num_time_steps,)
+            onset = -1
+            for t, val in enumerate(line):
+                if val == 2:    # onset
+                    if onset >= 0:   # 上一个note没有off就先off掉
+                        notes.append((onset, t, note))
+                    onset = t
+                elif val > 0 and onset < 0: # note on
+                    onset = t
+                elif val == 0 and onset >= 0:
+                    notes.append((onset, t, note))
+                    onset = -1
+                # val == 1 and onset >= 0: 继续响着
+                # val == 0 and onset < 0: 继续静音
+        notes_list.append(notes)
+    return notes_list
+
+
+def midi2notes(
+        midi_file: Union[str, mido.MidiFile],
+        note_range: Tuple[int, int] = (0, 127)
+    ) -> List[List[Tuple[float, float, int, float]]]:
+    """将midi文件转换为音符列表
+
+    Args:
+        midi_file: midi文件路径 或者 mido.MidiFile对象
+        note_range: 音符范围, midi编码
+    Returns:
+        音符列表的列表, 每一项代表一个音轨, 每个音轨由多个音符组成, 每个音符由(onset, offset, note, velocity)组成，时间单位为秒，velocity为[0, 1]之间的浮点数
+    """
+    mid = mido.MidiFile(midi_file) if isinstance(midi_file, str) else midi_file
+    num_notes = note_range[1] - note_range[0] + 1
+    n_beat_per_us_ticks = 1e-6 / mid.ticks_per_beat # 再乘一个(us/beat)就得到了(s/tick)
+
+    # 获取tempo和总时长 之所以不用提供的length属性是因为它也是遍历的，我这里遍历还能获取tempo、提取note事件
+    all_tick_num = 0
+    # [开始tick, 结束tick，在此之前的时间，spt(只要乘上tick就是秒数)]
+    n_per_ticks = [[0, 0, 0, mido.midifiles.midifiles.DEFAULT_TEMPO * n_beat_per_us_ticks]]
+    tracks = []
+    for track in mid.tracks:
+        track_tick = 0
+        track_tick_note = 0
+        track_msg = []
+        has_note = False
+        for m in track:
+            track_tick += m.time
+            if m.type == 'set_tempo':
+                # -1的项后面填充
+                n_per_ticks.append([track_tick, -1, -1, m.tempo * n_beat_per_us_ticks])
+            elif m.type[:4] == 'note':
+                has_note = True
+                track_tick_note = track_tick
+                track_msg.append(m.copy(time=track_tick))
+        if track_tick_note > all_tick_num:
+            all_tick_num = track_tick
+        if has_note:
+            tracks.append(track_msg)
+
+    sec = 0
+
+    n_per_ticks.sort()
+    for i in range(1, len(n_per_ticks)):
+        # 假设最后一个tempo_change之后还有note
+        sec += (n_per_ticks[i][0] - n_per_ticks[i-1][0]) * n_per_ticks[i-1][3]
+        n_per_ticks[i-1][1] = n_per_ticks[i][0] # 结束tick
+        n_per_ticks[i][2] = sec      # 在此之前的时间
+    sec += (all_tick_num - n_per_ticks[-1][0]) * n_per_ticks[-1][3]
+    n_per_ticks[-1][1] = float('inf')
+
+    def track2notes(track) -> List[Tuple[float, float, int, float]]:
+        tempo_idx = 0
+        begin_time, valid_time, time_bef, spt = n_per_ticks[0]
+        active_notes = np.zeros(num_notes, dtype=int)
+        notes = []
+        
+        for m in track:
+            # 更新tempo
+            while m.time >= valid_time:
+                tempo_idx += 1
+                begin_time, valid_time, time_bef, spt = n_per_ticks[tempo_idx]
+
+            note = m.note - note_range[0]
+            if note < 0 or note >= num_notes:
+                continue
+
+            time = time_bef + (m.time - begin_time) * spt
+
+            if active_notes[note] > 0:      # 有音符在响 赋值为1表示中间过程
+                notes.append((active_notes[note], time, note, m.velocity / 127.0))
+
+            if m.type == 'note_off' or m.velocity == 0:
+                active_notes[note] = 0
+            else:
+                active_notes[note] = time
+
+        return notes
+
+    return [track2notes(track) for track in tracks]
+
+
 def notes2midi(
         notes: List[Tuple[float, float, int, float]],
         time_step: float = 256/22050,
@@ -489,12 +630,17 @@ def notes2midi(
     ) -> mido.MidiFile:
     """
     将音符列表转换为midi文件
-    notes: list of dict 事件列表，每一项由以下组成元素：
-        onset: float 开始时间（用[0]索引）
-        offset: float 结束时间
-        note: int 音符
-        velocity: float 音符力度[0, 1]
-    time_step: float 时间步长，单位秒
+
+    Args:
+        notes: list of dict 事件列表，每一项由以下组成元素：
+            onset: float 开始时间（用[0]索引）
+            offset: float 结束时间
+            note: int 音符
+            velocity: float 音符力度[0, 1]
+        time_step: float 时间步长，单位秒
+    
+    Returns:
+        mido.MidiFile: 生成的midi文件
     """
     mid = mido.MidiFile(ticks_per_beat=TICKS_PER_BEAT)   # 默认一个四分音符480ticks
     scale = mid.ticks_per_beat / (TEMPO * 1e-6) * time_step
@@ -558,4 +704,4 @@ def output2midi(
         energy_tol = 11,
         midi_offset = 24
     )
-    return notes2midi(note_events, time_step)
+    return notes2midi(note_events, time_step) # type: ignore

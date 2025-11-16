@@ -1,3 +1,4 @@
+# type: ignore
 """
 使用fluidsynth库合成音频
 """
@@ -17,13 +18,16 @@ from ctypes import (
     c_void_p,
     create_string_buffer,
 )
-
 # 路径管理
 import os
-lib_path = os.path.join(os.path.dirname(__file__), 'fluidsynth_win', 'libfluidsynth-3.dll')
+
+# lib_path = os.path.join(os.path.dirname(__file__), 'fluidsynth_win', 'libfluidsynth-3.dll')
+# how to build fluidsynth on linux: see README.md
+lib_path = os.path.join(os.path.dirname(__file__), 'fluidsynth_linux', 'libfluidsynth.so.3.5.0')
+
 default_sound_font = os.path.join(os.path.dirname(__file__), 'MS Basic.sf3')
 _fl = CDLL(lib_path)
-
+print("Fluidsynth library loaded.")
 def cfunc(name, result, *args):
     """Build and apply a ctypes prototype complete with parameter flags"""
     if hasattr(_fl, name):
@@ -70,6 +74,12 @@ fluid_synth_sfload = cfunc('fluid_synth_sfload', c_int,
                            ('filename', c_char_p, 1),
                            ('update_midi_presets', c_int, 1))
 
+# 关闭所有日志级别输出
+fluid_set_log_function = cfunc('fluid_set_log_function', None,
+                               ('level', c_int, 1),
+                               ('fun', c_void_p, 1),
+                               ('data', c_void_p, 1))
+
 ## player
 new_fluid_player = cfunc('new_fluid_player', c_void_p,
                          ('synth', c_void_p, 1))
@@ -109,7 +119,7 @@ fluid_file_renderer_process_block = cfunc('fluid_file_renderer_process_block', c
 
 
 class Synth:
-    def __init__(self, sample_rate, sound_font = default_sound_font, gain = 1):
+    def __init__(self, sample_rate: int, sound_font: str = default_sound_font, gain: float = 1.0, verbose: bool = False):
         self.settings = new_fluid_settings()
         if(fluid_settings_setnum(self.settings, "synth.sample-rate".encode(), c_double(sample_rate)) != FLUID_OK):
             print("Failed to set synth.sample-rate")
@@ -119,6 +129,11 @@ class Synth:
             exit(1)        
         fluid_settings_setstr(self.settings, "player.timing-source".encode(), "sample".encode())
         fluid_settings_setint(self.settings, "synth.lock-memory".encode(), 0)
+        # 关闭日志输出
+        if not verbose:
+            fluid_settings_setint(self.settings, "synth.verbose".encode(), 0)
+            for level in range(5):
+                fluid_set_log_function(level, None, None)
 
         self.synth = new_fluid_synth(self.settings)
         fluid_synth_sfload(self.synth, sound_font.encode(), 0)
@@ -149,4 +164,7 @@ class Synth:
 # 使用举例
 if __name__ == "__main__":
     s = Synth(22050)
-    s.midi2audio(r"C:\amt\data\inferMusic\short mix.mid", r"C:\amt\data\inferMusic\short mix.wav")
+    midi_dir = os.path.join(os.path.dirname(__file__), '..', 'inferMusic')
+    midi_file = os.path.join(midi_dir, 'short mix.mid')
+    audio_file = os.path.join(midi_dir, 'short mix.wav')
+    s.midi2audio(midi_file, audio_file)

@@ -16,6 +16,9 @@ __pycache__/
 /data/PHENICX-Anechoic/
 /data/URMP/
 /data/guitarset/
+/data/musicnet/**/
+/data/musicnet/musicnet_metadata.csv
+/data/musicnet/musicnet.npz
 # 生成的数据集
 /data/septimbre/**/
 
@@ -28,9 +31,21 @@ __pycache__/
 /evaluate/URMP_processed/
 /evaluate/BACH10_processed/
 /evaluate/basicamt/
+/evaluate/basicamt_fixCQT/
+/evaluate/basicamt_noDilation/
+/evaluate/basicamt_batchnorm/
+/evaluate/basicamt_BCE/
+/evaluate/basicamt_learnableCQT/
+/evaluate/basicamt_nolog/
+/evaluate/onsets_frames/
 /evaluate/basicpitch/
 /evaluate/basicpitch_raw/
 /evaluate/septimbre/
 
 # 测试文件夹
 /test/
+
+# UV
+uv.lock
+.venv
+.uv

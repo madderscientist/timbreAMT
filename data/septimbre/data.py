@@ -46,6 +46,7 @@ class Instruments(Dataset):
     def __len__(self):
         return self.combinations
 
+    @staticmethod
     def get_data_by_suffix(folder, suffix):
         if suffix.endswith('.npy'):
             return torch.tensor(np.load(folder), dtype=torch.float32)
@@ -57,10 +58,10 @@ class Instruments(Dataset):
     def __getitem__(self, idx):
         """
         idx: 0 ~ len(self) - 1
-        return: (inputs, outputs)
-        inputs: for .cqt.npy: [mix, 2, freq, time]
+        return: (input, output)
+        input:  for .cqt.npy: [mix, 2, freq, time]
                 for .wav: [mix, channel, time]
-        outputs:for .npy: [mix, channel, time]
+        output: for .npy: [mix, channel, time]
         """
         inst_comb_idx = idx // self.midi_combinations
         midi_comb_idx = idx % self.midi_combinations

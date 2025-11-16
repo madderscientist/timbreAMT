@@ -1,0 +1,18 @@
+import sys
+sys.path.append('..')
+from model.config import CONFIG
+
+# belowed constants are covered by CONFIG
+# SAMPLE_RATE = CONFIG.CQT.fs
+# HOP_LENGTH = CONFIG.CQT.hop
+# ONSET_LENGTH = SAMPLE_RATE * 32 // 1000
+# OFFSET_LENGTH = SAMPLE_RATE * 32 // 1000
+# HOPS_IN_ONSET = ONSET_LENGTH // HOP_LENGTH
+# HOPS_IN_OFFSET = OFFSET_LENGTH // HOP_LENGTH
+# MIN_MIDI = 24
+# MAX_MIDI = 107
+
+N_MELS = 229
+MEL_FMIN = 30
+MEL_FMAX = CONFIG.CQT.fs // 2
+WINDOW_LENGTH = 2048

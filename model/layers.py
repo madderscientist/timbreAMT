@@ -1,6 +1,8 @@
+from typing import Literal
 import torch
 import torch.nn as nn
 import numpy as np
+from torch.nn.common_types import _size_2_t
 
 class CAT(nn.Module):
     def __init__(self, *layers, dim=1):
@@ -42,7 +44,8 @@ class HarmonicaStacking(nn.Module):
 
         return shifted
 
-    def harmonic_shifts(up_harmonics, down_harmonics = 1, bins_per_octave = 12):
+    @staticmethod
+    def harmonic_shifts(up_harmonics: int, down_harmonics: int = 1, bins_per_octave: int = 12) -> np.ndarray:
         """
         up_harmonics: int Number of harmonics to stack, including the original CQT
         down_harmonics: int Number of harmonics to stack below the original CQT
@@ -112,9 +115,18 @@ class CompensateHS(nn.Module):
 
 
 class CBS(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size = 3, stride = 1, padding = "same", dilation = 1, padding_mode = "zeros"):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: _size_2_t = 3,
+        stride: _size_2_t = 1,
+        padding: _size_2_t | str = "same",
+        dilation: _size_2_t = 1,
+        padding_mode: Literal['zeros', 'reflect', 'replicate', 'circular'] = "zeros"
+    ) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, dilation = dilation, padding_mode=padding_mode)
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, dilation = dilation, padding_mode = padding_mode)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.SiLU(inplace=True)
 
@@ -125,9 +137,18 @@ class CBS(nn.Module):
         return x
 
 class CBR(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size = 3, stride = 1, padding = "same", dilation = 1, padding_mode = "zeros"):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: _size_2_t = 3,
+        stride: _size_2_t = 1,
+        padding: _size_2_t | str = "same",
+        dilation: _size_2_t = 1,
+        padding_mode: Literal['zeros', 'reflect', 'replicate', 'circular'] = "zeros"
+    ) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, dilation = dilation, padding_mode=padding_mode)
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, dilation = dilation, padding_mode = padding_mode)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.ReLU(inplace=True)
 
@@ -138,9 +159,18 @@ class CBR(nn.Module):
         return x
 
 class CBLR(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size = 3, stride = 1, padding = "same", dilation = 1, padding_mode = "zeros"):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: _size_2_t = 3,
+        stride: _size_2_t = 1,
+        padding: _size_2_t | str = "same",
+        dilation: _size_2_t = 1,
+        padding_mode: Literal['zeros', 'reflect', 'replicate', 'circular'] = "zeros"
+    ) -> None:
         super().__init__()
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, dilation = dilation, padding_mode=padding_mode)
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False, dilation = dilation, padding_mode = padding_mode)
         self.bn = nn.BatchNorm2d(out_channels)
         self.act = nn.LeakyReLU(0.01, inplace=True)
 
@@ -257,9 +287,10 @@ class EnergyNorm(nn.Module):
     1: 能量的归一化
     2: 都输出
     """
-    def __init__(self, output_type = 1):
+    def __init__(self, output_type = 1, log_scale = False):
         super().__init__()
         self.output_type = output_type
+        self.log_scale = log_scale
     
     def forward(self, x):
         """
@@ -278,6 +309,11 @@ class EnergyNorm(nn.Module):
         if self.output_type == 0:
             return x / torch.sqrt(std)
         if self.output_type == 1:
+            if self.log_scale:
+                # less than 1e-8 will be dropped by onnx, but 1.01e-8 will be kept
+                return torch.log(eng + 1.01e-8) - torch.log(std)
             return eng / std
         if self.output_type == 2:
+            if self.log_scale:
+                return x / torch.sqrt(std), torch.log(eng + 1.01e-8) - torch.log(std)
             return x / torch.sqrt(std), eng / std

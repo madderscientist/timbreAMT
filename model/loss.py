@@ -18,9 +18,14 @@ def AMT_loss(onset, note, target, mse = False):
     note: [..., note, time]
     target: [..., note, time]
     """
+    if onset.shape[-1] > target.shape[-1]:
+        onset = onset[..., :target.shape[-1]]
+        note = note[..., :target.shape[-1]]
+    elif onset.shape[-1] < target.shape[-1]:
+        target = target[..., :onset.shape[-1]]
+
     note_ref = (target == 1).float()
     onset_ref = (target == 2).float()
-    slience_ref = (target == 0).float()
 
     # 按理来说应该正例权值大一些以补偿，但是会导致模糊的边缘，特别是onset，alpha为0.95时几乎就是note了。所以和原论文一样，少样本的正例权值应该小
     note_loss = focal_loss(note_ref + onset_ref, note, gamma=1, alpha=0.2)
@@ -28,6 +33,7 @@ def AMT_loss(onset, note, target, mse = False):
 
     if mse:
         # 加权MSE
+        slience_ref = (target == 0).float()
         feature_num = target.size(-2)
         mse = (onset + note - target).pow(2)
         ## 再加一维一自动广播 不然乘法做不了
@@ -36,7 +42,6 @@ def AMT_loss(onset, note, target, mse = False):
         weight2 = ((feature_num + 2 - onset_ref.sum(-2)) / feature_num).unsqueeze(-2)
         mse = mse * note_ref * weight1 + mse * slience_ref * weight0 + mse * onset_ref * weight2
         mse_loss = mse.sum()
-
         return (note_loss + onset_loss + mse_loss * 0.5) * 0.666   # 平衡AMTloss和CQTloss。note_loss有一份，onset_loss有一份，mse_loss有两份(三个weight加起来是2)
     else:
         return note_loss + onset_loss
@@ -143,7 +148,8 @@ class LossNorm():
 
 class DWA():
     def __init__(self, loss_num = 2, K = 1.0, T = 1.0):
-        self.loss_history = [[None, None] for _ in range(loss_num)]
+        self.loss_history: list[list[float | None]] \
+            = [[None, None] for _ in range(loss_num)]
         self.K = K
         self.T = T
     

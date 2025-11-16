@@ -3,12 +3,11 @@
 
 ## 结构
 对标的是[BasicPitch](https://github.com/spotify/basic-pitch)，借鉴了其大部分结构，就某些地方进行了修改。
-参数量比它大，理论上效果可以更好；但是使用的是随机生成的数据集，因此难说。
 
 具体不同的地方如下：
 
 ### EnergyNorm
-相当于多了一个归一化层，但是是针对非负数据（能量）进行的。加在CQT之后。
+针对非负数据（能量）进行的归一化操作，加在CQT之后。参考了BasicPitch取了对数，发现能提升效果。BasicPitch的流程：log -> 强行归一 -> BatchNorm；我的方法：能量归一 -> log -> 可学习仿射变换。区别在于推理时BatchNorm的均值和方差是统计得到的，而我的是基于帕塞瓦尔定律每次算的，实验证明我的方法有不错的迁移性。
 
 ### dilation convolution
 原文中使用了一个频域跨度39的大卷积核，我认为有如下问题：
@@ -20,7 +19,9 @@
 CBR(16, 8, kernel_size=(25, 3), dilation=(3, 1), padding="same", stride=1)
 ```
 
-此外，为了强调和弦音，我加入了不均匀dilation的卷积层，我称之为和弦卷积(ChordConv)，见[layers.py](../model/layers.py)，重点关注谐波重叠的音。有“残差连接”和“密集连接”两个版本，即对平行的卷积结果的两种处理：add和cat。实验发现add完全不如cat。但后续的消融实验表明，模型也许不需要更进一步的设计，删去ChordConv并不影响最终结果，见后面“历史模型”从V4到V5的迭代过程。
+此外还设计了专门针对谐波的空洞卷积组，但是消融实验发现没有用，于是删去，仅保留了跨越两个八度的大空洞卷积。
+
+一开始使用cat进行跨层处理，然而发现用残差连接在效果不变的情况下，还减少了参数量。
 
 
 ### 将CQT纳入参数
@@ -58,7 +59,7 @@ loss = note_loss + onset_loss
 
 
 ## 训练
-在`4070 Super`上训练。训练分两阶段，完全使用[随机合成数据](../data/septimbre/make_basicamt.ipynb)，并加入高斯噪声进行数据增强。BasicPitch有三个损失：pitch、frame、onset，但是其在论文中说没有pitch损失效果也差不多，所以我就没做。
+在 `RTX4090`上训练。训练分两阶段，完全使用[随机合成数据](../data/septimbre/make_basicamt.ipynb)，并加入高斯噪声进行数据增强。BasicPitch有三个损失：pitch、frame、onset，但是其在论文中说没有pitch损失效果也差不多，所以我就没做。
 
 一开始尝试使用单曲多音色训练（单音色乐曲相加），但结果不佳。于是转为每次只输入一种音色，但是扩大了音色数目、单曲内音符更密集。
 
@@ -83,10 +84,6 @@ loss = note_loss + onset_loss
     frames = 360
     do_CQT = True
     ```
-
-训练的loss见[basicamt.loss.txt](basicamt.loss.txt)；
-最后一轮训练存档[basicamt.pth](basicamt.pth)；
-最佳训练存档[best_basicamt.pth](best_basicamt.pth)；
 
 ### 第二阶段：学会更多乐器
 在第一阶段的基础上，将CQT纳入训练参数中，以探索更好的时频表示方法。输入是单声道音频，见[train_basicamt2.ipynb](train_basicamt2.ipynb)。
@@ -132,13 +129,9 @@ loss = note_loss + onset_loss
     do_CQT = False
     ```
 
-训练的loss见[basicamt_all.loss.txt](basicamt_all.loss.txt)；
-最后一轮训练存档[basicamt_all.pth](basicamt_all.pth)；
-最佳训练存档[best_basicamt_all.pth](best_basicamt_all.pth)；
-最后导出为可以直接加载的模型：[model](basicamt_model.pth)，其使用方法见[use_model.ipynb](use_model.ipynb)。
+最后导出为可以直接加载的模型：[model](best_basicamt_model.pth)，其使用方法见[use_model.ipynb](use_model.ipynb)，得到的ONNX为[basicamt_44100.onnx](basicamt_44100.onnx)。
 
 将CQT纳入训练参数是一定有好处的。曾做过一个实验，第二阶段训练仍然使用第一阶段的数据集，发现损失还能再下降，说明CQT的参数选择确实有优化的空间。
-
 
 ## 音符创建（二值化）
 这一步完全照搬BasicPitch，实现在[postprocess.py](../utils/postprocess.py)的output_to_notes_polyphonic函数。下面是对BasicPitch项目文件结构的浅析：
@@ -201,297 +194,3 @@ filtfilt基本原理参考[《Matlab的filtfilt函数解析与C++实现》](http
 运行ONNX时报错：`Non-zero status code returned while running Conv node. Name:'/early_conv/early_conv.1/act/Relu_output_0_nchwc' Status Message: Dilation not supported for AutoPadType::SAME_UPPER or AutoPadType::SAME_LOWER`，是dilation不支持用“same”指定padding，得明确。
 
 最后得到的是[basicamt_44100.onnx](basicamt_44100.onnx)，输入为44100Hz、shape为(1,1,time)的"audio"，输出为(1,84,frames)的"onset"和(1,84,frames)的"frame"。
-
-
-
-## 历史模型
-当前的模型算是V5，除去CQT参数剩参数量26620，比BasicPitch少！在此前经历了如下迭代过程（具体训练结果见[history](./history/)文件夹）：
-
-### V1
-一开始用的是`hop=384`的CQT，网络结构如下：
-```py
-class BasicAMT(nn.Module):
-    def __init__(self):
-        super().__init__()
-        harmonics = 9
-        self.eng = EnergyNorm(output_type=1)
-        self.HCQT = HarmonicaStacking(HarmonicaStacking.harmonic_shifts(harmonics-1, 1, 36), 7 * 36)
-        self.early_conv = nn.Sequential(
-            CBR(harmonics, 16, (5, 3), 1, "same"),
-            CBR(16, 8, kernel_size=(25, 3), dilation=(3, 1), padding="same", stride=1)
-        )
-        self.conv_yn = nn.Sequential(
-            ChordConv_concat(8 + harmonics, 14, 26, [0, 4, 5, 7, 12], 3),
-            CBR(26, 32, 3, (3, 1), (0, 1)),
-            nn.Conv2d(32, 1, kernel_size=(7, 3), stride=1, padding="same"),
-            nn.Sigmoid()
-        )
-        self.conv_yo1 = CBR(8 + harmonics, 15, kernel_size=(7, 3), padding=(2, 1), stride=(3, 1))
-        self.conv_yo2 = nn.Sequential(
-            CBR(16, 8, (3, 5), 1, "same"),
-            nn.Conv2d(8, 1, kernel_size=3, stride=1, padding="same"),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        eng = self.eng(x)
-        stacked = self.HCQT(eng)
-        early_conv = self.early_conv(stacked)
-
-        early_conv = torch.concat((stacked, early_conv), dim=1)
-        yn = self.conv_yn(early_conv)
-
-        _yo = self.conv_yo1(early_conv)
-        yo = torch.concat((yn, _yo), dim=1)
-        yo = self.conv_yo2(yo)
-        return yo.squeeze(1), yn.squeeze(1)
-```
-在[history/v1](history/v1/)中还留存了当时生成数据集使用的脚本。
-
-模型参数很多，效果其实还行，帧级评估见文末。
-
-### V2
-希望削减模型大小。于是大刀砍掉了两个CBR：
-```py
-def __init__(self):
-    super().__init__()
-    harmonics = 9
-    self.eng = EnergyNorm(output_type=1)
-    self.HCQT = HarmonicaStacking(HarmonicaStacking.harmonic_shifts(harmonics-1, 1, 36), 7 * 36)
-    self.early_conv = nn.Sequential(
-        CBR(harmonics, 16, (5, 3), 1, "same"),
-        CBR(16, 8, kernel_size=(25, 3), dilation=(3, 1), padding="same", stride=1)
-    )
-    self.conv_yn = nn.Sequential(
-        ChordConv2(8 + harmonics, 14, 32, [0, 4, 5, 7, 12], 3),
-        nn.Conv2d(32, 1, kernel_size=(7, 3), stride=(3, 1), padding=(2, 1)),
-        nn.Sigmoid()
-    )
-    self.conv_yo1 = CBR(8 + harmonics, 17, kernel_size=(7, 3), padding=(2, 1), stride=(3, 1))
-    self.conv_yo2 = nn.Sequential(
-        nn.Conv2d(18, 1, kernel_size=(3, 5), stride=1, padding="same"),
-        nn.Sigmoid()
-    )
-```
-不出意外的是，帧级评估下降了，但只有一点点，说明确实有冗余，但是砍错地方了。
-
-### V3
-进行模型评估时发现评估数据集比简单合成的音频复杂，比如强度不恒定、加入了类似揉弦的技巧、音不准。于是我决定强化数据集，得到了[midiarray.py](../utils/midiarray.py)中的midi_randomize函数，就上述三个方面加入了一定随机性。这导致模型收敛后损失比之前大了点。
-
-模型结构方面，考虑到“+4”“+5”重叠的谐波靠后，影响可能不是很大，在ChordConv中不该享有和“+12”一样多的层。于是主观倾斜了层数分配。此外，我认为ChordConv后半部分需要大核才能更好融合，于是只保留了前半部分。onset部分保留了V2的结构。在(25, 3)的空洞卷积处没有关注相邻信息（一个半音的三个频点只关注了中间一个），所以在后面加了一个小核。还将谐波堆叠数目从9改为8。总体算下来参数量少了很多：
-```py
-def __init__(self):
-    super().__init__()
-    harmonics = 8
-    self.eng = EnergyNorm(output_type=1)
-    self.HCQT = HarmonicaStacking(HarmonicaStacking.harmonic_shifts(harmonics-1, 1, 36), 7 * 36)
-    self.early_conv = nn.Sequential(
-        CBR(harmonics, 16, (5, 5), 1, "same"),
-        CBR(16, 10, kernel_size=(25, 3), dilation=(3, 1), padding="same", stride=1)
-    )
-    self.neck = CBR(10 + harmonics, 18, (5, 5), 1, "same", 1)
-    self.conv_yn = nn.Sequential(
-        ChordConv_concat_half(18, [18, 8, 8, 10, 16], [0, 4, 5, 7, 12], 3),
-        nn.Conv2d(60, 1, (5, 5), (3, 1), (1, 2), padding_mode='replicate'),
-        nn.Sigmoid()
-    )
-    self.conv_yo1 = CBR(18, 17, kernel_size=(7, 3), padding=(2, 1), stride=(3, 1))
-    self.conv_yo2 = nn.Sequential(
-        nn.Conv2d(18, 1, kernel_size=(5, 5), stride=1, padding="same"),
-        nn.Sigmoid()
-    )
-```
-
-### V4
-但是V3还是不够令我满意。于是我决定将384点转为256点，获得更细致的分析。为了适应更改后的时间精度，我给几个时间长度为3的核加宽到了5；同时进一步倾斜了ChordConv的层数分配，参数量小有上升，但效果却好了许多，主观判断和BasicPitch有得一拼！初步说明了随机生成数据的可行性。
-
-在此时导出为ONNX，以供网页使用。为此完成了自己的filtfilt。
-
-### V5 (final)
-然而V4有一个60channel的层，是运行的瓶颈，导致浏览器上只能进行4min音频的处理。在V4的基础上我进行了一系列实验。
-
-首先“损失最小”是否等于“评估最佳”？对于不同模型，这大概不成立，比如后面的实验中损失大但评估表现不一定差，可能是二值化抹平了差异。然而对于一个模型，我截取了“快要收敛”和“已经收敛”两处结果进行评估，发现收敛了的得分确实高。因此虽然“损失”和“评估”不能划等号，但是依然有参考价值。
-
-其次对V4开展了“和弦卷积”的消融实验。首先针对`ChordConv`的dilation，换用了如下层（保持输出维度、参数量不变，仅仅修改dilation）：
-```py
-CBR(18, 60, 3)
-```
-
-实验结果如下：
-
-数据集 | threshold | Acc | P | R | F1 | 参考F1
------ | --------- | --- | -- | -- | -- | ----
-BACH10合奏 | 0.14064 | 0.68197 | 0.80230 | 0.82043 | 0.81054    | 0.79624
-BACH10所有 | 0.30880 | 0.75991 | 0.86451 | 0.86242 | 0.85572    | 0.85503
-PHENICX | 0.05454 | 0.42934 | 0.58654 | 0.61504 | 0.59963       | 0.60143
-URMP合奏 | 0.11840 | 0.57195 | 0.74115 | 0.71244 | 0.72399      | 0.72980
-URMP独奏 | 0.33998 | 0.68451 | 0.85354 | 0.77125 | 0.80406      | 0.8084
-
-结果没有太大的区别！于是我做出假设：首先，只依赖`dilation=1`的是可以达到目前的效果的；其次，对于`dilation=1`的层数，无论是此处的60还是原本的18都足以完成需求，所以可以只使用较少的层数来完成任务。于是换成了以下层：
-```py
-CBR(18, 18, 5)
-```
-
-数据集 | threshold | Acc | P | R | F1 | 参考F1
------ | --------- | --- | -- | -- | -- | ----
-BACH10合奏 | 0.12880 | 0.66804 | 0.79271 | 0.80925 | 0.80063    | 0.79624
-BACH10所有 | 0.30352 | 0.75862 | 0.86340 | 0.86058 | 0.85469    | 0.85503
-PHENICX | 0.05918 | 0.41638 | 0.57819 | 0.59698 | 0.58656       | 0.60143
-URMP合奏 | 0.13028 | 0.57532 | 0.74991 | 0.70941 | 0.72653      | 0.72980
-URMP独奏 | 0.37670 | 0.68868 | 0.85615 | 0.77268 | 0.80664      | 0.8084
-
-基本没差多少，说明可行。大胆点，直接把这层删了，并且精简了onset的层数，得到了现在的模型V5。这并不意味ChordConv无用，只能说明完成乐器无关的amt任务，仅仅依赖前面的层已经足矣，后面的层相当于在进行恒等变换，属于冗余。
-
-此外，还尝试了加入通道注意力，具体做法是：
-```py
-class WeightedGAP(nn.Module):
-    def __init__(self, input_channels):
-        super().__init__()
-        self.input_channels = input_channels
-        self.w = nn.Sequential(
-            nn.Conv2d(input_channels, 1, 1, bias=True),
-            nn.ReLU(inplace=True)
-        )
-    def forward(self, x):
-        # x: (batch, input_channels, note, time)
-        w = self.w(x)   # w: (batch, 1, frame, time)
-        w = w / w.sum(dim=(2, 3), keepdim=True) # 防止上溢出，所以先除法
-        avg = (x * w).sum(dim=(2, 3), keepdim = False)   # (batch, input_channels)
-        return avg, w
-```
-
-先对HS填充的0做补偿（用layer.CompensateHS），再用通道注意力得到的全局池化结果乘上原结果：
-```
-self.neck = CBLR(10 + harmonics, 18, (5, 5), 1, "same", 1)
-self.neck_emphasis = WeightedGAP(18)
-self.gap_transform = nn.Sequential(
-    nn.Linear(18, 8),
-    nn.LeakyReLU(inplace=True),
-    nn.Linear(8, 18),
-    nn.Sigmoid()
-)
-```
-
-数据集 | threshold | Acc | P | R | F1 | 参考F1
------ | --------- | --- | -- | -- | -- | ----
-BACH10合奏 | 0.16112 | 0.68581 | 0.82112 | 0.80742 | 0.81333    | 0.79624
-BACH10所有 | 0.31696 | 0.75639 | 0.85986 | 0.86222 | 0.85215    | 0.85503
-PHENICX | 0.06522 | 0.37050 | 0.58875 | 0.49877 | 0.53902       | 0.6143
-URMP合奏 | 0.12200 | 0.57109 | 0.75032 | 0.70260 | 0.72294      | 0.72980
-URMP独奏 | 0.45104 | 0.68694 | 0.86137 | 0.77167 | 0.80687      | 0.8084
-
-可以看到结果毫无优化，参数增加了但效果变差了。
-
-最后进行了一些有趣的尝试：
-1. sigmoid前加BatchNorm：不收敛。
-2. 对CQT频谱求对数：抗噪能力大幅下降，训练时加入噪声使得其表现在测试集上大幅下降。
-
-### 评估结果
-<table>
-    <tr>
-        <th>数据集</th> <th>指标</th> <th>v1</th> <th>v2</th> <th>v3</th> <th>v4</th> <th>v5</th>
-    </tr>
-    <tr> <td rowspan="5">BACH10<br>合奏</td>
-  		<td>阈值</td>
-        <td>0.10056</td> <td>0.10004</td> <td>0.10016</td> <td>0.14224</td> <td>0.15312</td>
-    </tr>
-    <tr>
-        <td>Acc</td>
-        <td>0.63587</td> <td>0.63311</td> <td>0.64147</td> <td>0.66188</td> <td>0.67135</td>
-    </tr>
-    <tr>
-        <td>P</td>
-        <td>0.81055</td> <td>0.81799</td> <td>0.82227</td> <td>0.79374</td> <td>0.80869</td>
-    </tr>
-    <tr>
-        <td>R</td>
-        <td>0.74715</td> <td>0.73702</td> <td>0.74483</td> <td>0.79947</td> <td>0.79789</td>
-    </tr>
-    <tr>
-        <td>F1</td>
-        <td>0.77707</td> <td>0.77509</td> <td>0.78133</td> <td>0.79624</td> <td>0.80291</td>
-    </tr>
-    <tr> <td rowspan="5">BACH10<br>所有</td>
-  		<td>阈值</td>
-        <td>0.25024</td> <td>0.17332</td> <td>0.25408</td> <td>0.29728</td> <td>0.30184</td>
-    </tr>
-    <tr>
-        <td>Acc</td>
-        <td>0.7483</td>  <td>0.73486</td> <td>0.74766</td> <td>0.75797</td> <td>0.76612</td>
-    </tr>
-    <tr>
-        <td>P</td>
-        <td>0.86608</td> <td>0.83854</td> <td>0.8707</td>  <td>0.86367</td> <td>0.87571</td>
-    </tr>
-    <tr>
-        <td>R</td>
-        <td>0.84557</td> <td>0.85761</td> <td>0.84195</td> <td>0.86032</td> <td>0.85777</td>
-    </tr>
-    <tr>
-        <td>F1</td>
-        <td>0.84792</td> <td>0.83997</td> <td>0.84804</td> <td>0.85503</td> <td>0.86087</td>
-    </tr>
-    <tr> <td rowspan="5">PHENICX<br>合奏</td>
-  		<td>阈值</td>
-        <td>0.058952</td> <td>0.016438</td> <td>0.035752</td> <td>0.059416</td> <td>0.06464</td>
-    </tr>
-    <tr>
-        <td>Acc</td>
-        <td>0.33292</td> <td>0.29585</td> <td>0.36759</td> <td>0.4312</td> <td>0.42476</td>
-    </tr>
-    <tr>
-        <td>P</td>
-        <td>0.63959</td> <td>0.35915</td> <td>0.55536</td> <td>0.58486</td> <td>0.58628</td>
-    </tr>
-    <tr>
-        <td>R</td>
-        <td>0.40687</td> <td>0.62391</td> <td>0.52023</td> <td>0.62062</td> <td>0.60524</td>
-    </tr>
-    <tr>
-        <td>F1</td>
-        <td>0.49511</td> <td>0.4558</td> <td>0.5359</td> <td>0.60143</td> <td>0.59512</td>
-    </tr>
-    <tr> <td rowspan="5">URMP<br>合奏</td>
-  		<td>阈值</td>
-        <td>0.06098</td> <td>0.059999</td> <td>0.07376</td> <td>0.12632</td> <td>0.13840</td>
-    </tr>
-    <tr>
-        <td>Acc</td>
-        <td>0.50498</td> <td>0.48942</td> <td>0.50981</td> <td>0.57947</td> <td>0.57102</td>
-    </tr>
-    <tr>
-        <td>P</td>
-        <td>0.69847</td> <td>0.66262</td> <td>0.71199</td> <td>0.74894</td> <td>0.74857</td>
-    </tr>
-    <tr>
-        <td>R</td>
-        <td>0.6443</td> <td>0.65141</td> <td>0.64202</td> <td>0.71619</td> <td>0.70437</td>
-    </tr>
-    <tr>
-        <td>F1</td>
-        <td>0.66641</td> <td>0.72323</td> <td>0.67101</td> <td>0.7298</td> <td>0.72323</td>
-    </tr>
-    <tr> <td rowspan="5">URMP<br>独奏</td>
-  		<td>阈值</td> <td>0.19499</td> <td>0.21953125</td> <td>0.2359375</td> <td>0.34268</td> <td>0.35183</td>
-    </tr>
-    <tr>
-        <td>Acc</td>
-        <td>0.61368</td> <td>0.61068</td> <td>0.68630</td> <td>0.68957</td> <td>0.68630</td>
-    </tr>
-    <tr>
-        <td>P</td>
-        <td>0.80113</td> <td>0.81304</td> <td>0.85788</td> <td>0.85574</td> <td>0.85788</td>
-    </tr>
-    <tr>
-        <td>R</td>
-        <td>0.71998</td> <td>0.70681</td> <td>0.76998</td>  <td>0.77646</td> <td>0.76998</td>
-    </tr>
-    <tr>
-        <td>F1</td>
-        <td>0.75049</td> <td>0.74934</td> <td>0.80552</td> <td>0.8084</td> <td>0.80552</td>
-    </tr>
-    <tr>
-        <td>参数量</td>
-        <td>CQT<br>19944</td><td>74653</td> <td>69873</td> <td>57064</td> <td>61584</td> <td>46564</td>
-    </tr>
-</table>
