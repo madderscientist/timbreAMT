@@ -34,6 +34,7 @@ __pycache__/
 /evaluate/basicamt_fixCQT/
 /evaluate/basicamt_noDilation/
 /evaluate/basicamt_batchnorm/
+/evaluate/basicamt_layernorm/
 /evaluate/basicamt_BCE/
 /evaluate/basicamt_learnableCQT/
 /evaluate/basicamt_nolog/

@@ -143,13 +143,13 @@ class FlowAttention(nn.Module):
         # 2. Non-negative projection
         queries = self.kernel_method(queries)
         keys = self.kernel_method(keys)
-        ## 3. FlowAttention competing on the head dimension
-        # (1) Calculate incoming and outgoing flow
+        # 3. FlowAttention competing on the head dimension
+        ## (1) Calculate incoming and outgoing flow
         sink_incoming = 1.0 / torch.sum(
             (queries + self.eps) * (keys.sum(dim=1, keepdim=True).repeat(1, self.n_heads, 1, 1) + self.eps), dim=-1)
         source_outgoing = 1.0 / torch.sum(
             (keys + self.eps) * (queries.sum(dim=1, keepdim=True).repeat(1, self.n_heads, 1, 1) + self.eps), dim=-1)
-        # (2) conservation refine for source and sink
+        ## (2) conservation refine for source and sink
         conserved_sink = torch.sum((queries + self.eps) * (
                 (keys * source_outgoing[:, :, :, None]).sum(dim=1, keepdim=True).repeat(1, self.n_heads, 1,
                                                                                         1) + self.eps), dim=-1)
@@ -157,10 +157,10 @@ class FlowAttention(nn.Module):
                 (queries * sink_incoming[:, :, :, None]).sum(dim=1, keepdim=True).repeat(1, self.n_heads, 1,
                                                                                          1) + self.eps), dim=-1)
         conserved_source = torch.clamp(conserved_source, min=-1.0, max=1.0)  # for stability
-        # (3) Competition & Allocation
+        ## (3) Competition & Allocation
         sink_allocation = torch.sigmoid(conserved_sink * (float(queries.shape[2]) / float(keys.shape[2])))
         source_competition = torch.softmax(conserved_source, dim=-1) * float(keys.shape[2])
-        # (4) dot product
+        ## (4) dot product
         x = (self.dot_product(queries * sink_incoming[:, :, :, None],  # for value normalization
                               keys,
                               values * source_competition[:, :, :, None])  # competition

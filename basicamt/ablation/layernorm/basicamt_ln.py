@@ -3,17 +3,30 @@ import torch.nn as nn
 
 import sys
 sys.path.append("..")
-from model.layers import HarmonicaStacking, CBR, CBLR, EnergyNorm
+from model.layers import HarmonicaStacking, CBR, CBLR
 from model.loss import AMT_loss
-from model.config import CONFIG
 
-class BasicAMT(nn.Module):
+class EnergyNorm_LN(nn.Module):
     def __init__(self):
         super().__init__()
-        harmonics = CONFIG.Harmonics
-        self.eng = EnergyNorm(output_type=1, log_scale=True)
-        self.k = nn.Parameter(torch.tensor(1.0), requires_grad=True)
-        self.b = nn.Parameter(torch.tensor(0.0), requires_grad=True)
+        self.k = nn.Parameter(torch.tensor(1.0))
+        self.b = nn.Parameter(torch.tensor(0.01))
+
+    def forward(self, x):
+        # x: CQT: (B, 2, F, T)
+        # 使用整个二维平面的layernorm，也是每次计算
+        power = torch.sum(x.pow(2), dim=1, keepdim=True)
+        log_power = torch.log(power + 1.01e-8)   # (B, 1, F, T)
+        mean = log_power.mean(dim=(2, 3), keepdim=True) # (B, 1, 1, 1)
+        std = log_power.std(dim=(2, 3), keepdim=True, unbiased=True)    # (B, 1, 1, 1)
+        normed = (log_power - mean) / (std + 1e-9)
+        return self.k * normed + self.b
+
+class BasicAMT_LN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        harmonics = 8
+        self.eng = EnergyNorm_LN()
         self.HCQT = HarmonicaStacking(HarmonicaStacking.harmonic_shifts(harmonics-1, 1, 36), 7 * 36)
         self.early_conv = nn.Sequential(
             CBLR(harmonics, 16, (5, 5), 1, "same"),
@@ -35,7 +48,7 @@ class BasicAMT(nn.Module):
 
     def forward(self, x):
         # x: (batch, 2, 8*36, len)
-        eng = self.eng(x) * self.k + self.b
+        eng = self.eng(x)
         # eng: (batch, 1, 8*36, len)
         stacked = self.HCQT(eng)
         # stacked: (batch, 8, 7*36, len)
@@ -57,10 +70,6 @@ class BasicAMT(nn.Module):
         # yo: (batch, 1, 7*12, len)
         return yo.squeeze(1), yn.squeeze(1)
         # (batch, 7*12, len)
-    
-    def clampK(self, min=0.005, max=3.0):
-        with torch.no_grad():
-            self.k.clamp_(min, max)
 
     ##########################损失相关############################
     @staticmethod
@@ -68,7 +77,7 @@ class BasicAMT(nn.Module):
         return AMT_loss(onset, note, midiarray, mse=False)
 
 
-class BasicAMT_all(BasicAMT):
+class BasicAMT_all_LN(BasicAMT_LN):
     def __init__(self, CQTconfig, sepParams = None, CQTlearnable = True):
         super().__init__()
         from model.CQT import CQTsmall_fir
@@ -94,23 +103,3 @@ class BasicAMT_all(BasicAMT):
     def forward(self, x):
         x = self.cqt(x)
         return super().forward(x)
-
-
-class BasicAMT_44100(torch.nn.Module):
-    """
-    相比BasicAMT_all，输入为44100Hz采样率的音频，会先进行降采样到22050Hz
-    """
-    def __init__(self, basciamt_all: BasicAMT_all):
-        super().__init__()
-        self.basicamt_all = basciamt_all
-
-    def forward(self, x):
-        # (1, 1, time)
-        # 降采样到22050Hz（假定输出为44100Hz）
-        x = self.basicamt_all.cqt.down2sample(x)
-        onset, note = self.basicamt_all(x)
-        # 减小js代码量：在模型内部归一化
-        onset /= onset.max()
-        note /= note.max()
-        return onset, note
-        # (batch, 84, frame)   

@@ -317,3 +317,29 @@ class EnergyNorm(nn.Module):
             if self.log_scale:
                 return x / torch.sqrt(std), torch.log(eng + 1.01e-8) - torch.log(std)
             return x / torch.sqrt(std), eng / std
+
+
+class DiffPhase(nn.Module):
+    """
+    计算相位的差分
+    """
+    def forward(self, x):
+        """
+        x: (batch, 2, n_bins, len) Time-Frequency representation (real and imag parts interleaved along channel dimension)
+        output: (batch, 1, n_bins, len) Phase difference
+        """
+        phase = torch.atan2(x[:, 1, :, :], x[:, 0, :, :])
+        # phase: (batch, n_bins, len)
+        d = torch.diff(phase, dim=-1)
+        # d: (batch, n_bins, len-1)
+
+        if self.training:
+            # 训练时用可微分wrap
+            d = torch.atan2(torch.sin(d), torch.cos(d))
+        else:
+            # 推理时用加减法wrap, 加速计算
+            d = torch.where(d > np.pi, d - 2 * np.pi, d)
+            d = torch.where(d < -np.pi, d + 2 * np.pi, d)
+
+        d = torch.nn.functional.pad(d, (1, 0))
+        return d.unsqueeze(1)

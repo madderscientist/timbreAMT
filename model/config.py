@@ -18,6 +18,7 @@ class CQTConfig:
 class Config:
     MIDI_MIN: int = 24           # Minimum MIDI pitch
     MIDI_MAX: int = 107          # Maximum MIDI pitch
+    Harmonics: int = 8           # HCQT harmonics
 
     CQT: CQTConfig = field(default_factory=CQTConfig)  # CQT parameter configuration
     s_per_frame: float = field(init=False)             # Seconds per frame
