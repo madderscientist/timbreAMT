@@ -16,7 +16,6 @@ dependencies = [
     "mirdata>=0.3.9",
     "mir_eval>=0.8.0",
     "ipykernel",
-
     # onnx export, to enable web inference
     "onnx",
     "onnxruntime",

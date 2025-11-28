@@ -4,17 +4,6 @@ import torch.nn as nn
 import numpy as np
 from torch.nn.common_types import _size_2_t
 
-class CAT(nn.Module):
-    def __init__(self, *layers, dim=1):
-        super().__init__()
-        self.layers = nn.ModuleList(layers)
-        self.dim = dim
-    
-    def forward(self, x):
-        outs = [layer(x) for layer in self.layers]
-        return torch.cat(outs, dim=self.dim)
-
-
 class HarmonicaStacking(nn.Module):
     """
     Harmonica Stacking
@@ -114,6 +103,52 @@ class CompensateHS(nn.Module):
         return torch.cat(outs, dim=2)
 
 
+class LayerNorm2d(nn.Module):
+    def __init__(self, num_features: int, eps: float = 1.01e-8, affine: bool = True) -> None:
+        super().__init__()
+        self.layer_norm = nn.LayerNorm(num_features, eps, affine)
+
+    def forward(self, x):
+        # x: (batch, channel, n_bins, len)
+        x = x.permute(0, 2, 3, 1)  # (batch, n_bins, len, channel)
+        x = self.layer_norm(x)
+        x = x.permute(0, 3, 1, 2)  # (batch, channel, n_bins, len)
+        return x
+
+# instance norm without affine
+class CenterNorm2d(nn.Module):
+    def __init__(self, dim, eps = 1e-9):
+        super().__init__()
+        self.k = nn.Parameter(torch.ones(1, dim, 1, 1), requires_grad=True)
+        self.eps = eps
+
+    def forward(self, x):
+        return self.center_norm(x, self.eps) * self.k
+
+    @staticmethod
+    def center_norm(x, eps=1e-9):
+        # x: (batch, dim, freq, time)
+        mean = x.mean(dim=(-1, -2), keepdim=True)
+        std = x.std(dim=(-1, -2), keepdim=True)
+        return (x - mean) / (std + eps)
+
+class CenterNorm1d(nn.Module):
+    def __init__(self, dim, eps = 1e-9):
+        super().__init__()
+        self.k = nn.Parameter(torch.ones(1, 1, dim), requires_grad=True)
+        self.eps = eps
+
+    def forward(self, x):
+        return self.center_norm(x, self.eps) * self.k
+
+    @staticmethod
+    def center_norm(x, eps=1e-9):
+        # x: (batch, len, dim)
+        mean = x.mean(dim=1, keepdim=True)
+        std = x.std(dim=1, keepdim=True)
+        return (x - mean) / (std + eps)
+
+
 class CBS(nn.Module):
     def __init__(
         self,
@@ -177,106 +212,6 @@ class CBLR(nn.Module):
     def forward(self, x):
         x = self.conv(x)
         x = self.bn(x)
-        x = self.act(x)
-        return x
-
-class ChordConv_residual(nn.Module):
-    """
-    对谐波上有重叠的音符进行处理，最后残差连接并batchnorm+SiLU
-    in_channels: int Number of input channels
-    out_channels: int Number of output channels
-    harmonics: list of int Harmonics to consider 按照十二平均律 具体数据参看[small数据集的构建](../data/septimbre/readme.md)
-    bins_per_note: int Number of bins per note 因为harmonics是按照十二平均律的音符来的，默认是1
-    """
-    def __init__(self, in_channels, out_channels, harmonics = [0, 4, 5, 7, 12], bins_per_note = 1):
-        super().__init__()
-        self.cbrs = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(
-                    in_channels, out_channels,
-                    padding = "same",
-                    dilation = (max(1, h * bins_per_note), 1),  # 频率方向dilation，时间方向不变
-                    kernel_size = (3, 3),
-                    bias=False
-                ),
-                nn.BatchNorm2d(out_channels),
-                nn.ReLU(inplace=True)
-            )
-        for h in harmonics])
-        self.bn = nn.BatchNorm2d(out_channels)
-        self.act = nn.ReLU(inplace=True)
-    
-    def forward(self, x):
-        """
-        x: (batch, in_channels, n_bins, len) Time-Frequency representation
-        output: (batch, out_channels, n_bins, len) Chord Convolution
-        """
-        x = sum(conv(x) for conv in self.cbrs)
-        x = self.bn(x)
-        return self.act(x)
-
-
-class ChordConv_concat(nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, harmonics = [0, 4, 5, 7, 12], bins_per_note = 1):
-        super().__init__()
-        self.convs = nn.ModuleList([
-            nn.Conv2d(
-                in_channels, hidden_channels,
-                padding = "same",
-                dilation = (max(1, h * bins_per_note), 1),  # 频率方向dilation，时间方向不变
-                kernel_size = (3, 3),
-                bias=False
-            )
-        for h in harmonics])
-        hidden = hidden_channels * len(harmonics)
-        self.norm = nn.BatchNorm2d(hidden)
-        self.act = nn.ReLU(inplace=True)
-        self.pixel = nn.Conv2d(
-            hidden, out_channels,
-            padding = "same",
-            kernel_size = (3, 3),
-            bias=False
-        )
-        self.bn = nn.BatchNorm2d(out_channels)
-        self.act_pixel = nn.ReLU(inplace=True)
-    
-    def forward(self, x):
-        """
-        x: (batch, in_channels, n_bins, len) Time-Frequency representation
-        output: (batch, out_channels, n_bins, len) Chord Convolution
-        """
-        CONVS = [conv(x) for conv in self.convs]
-        x = torch.cat(CONVS, dim=1)
-        x = self.norm(x)
-        x = self.act(x)
-        x = self.pixel(x)
-        x = self.bn(x)
-        return self.act_pixel(x)
-
-
-class ChordConv_concat_half(nn.Module):
-    def __init__(self, in_channels, hidden_channels = [14, 8, 10, 12, 14], harmonics = [0, 4, 5, 7, 12], bins_per_note = 1):
-        super().__init__()
-        self.convs = nn.ModuleList([
-            nn.Conv2d(
-                in_channels, hidden_channels[i],
-                padding = (max(1, harmonics[i] * bins_per_note), 1),    # onnx不支持有dilation的padding="same"
-                dilation = (max(1, harmonics[i] * bins_per_note), 1),   # 频率方向dilation，时间方向不变
-                kernel_size = (3, 3),
-                bias=False
-            )
-        for i in range(len(hidden_channels))])
-        self.hidden = sum(hidden_channels)
-        self.norm = nn.BatchNorm2d(self.hidden)
-        self.act = nn.ReLU(inplace=True)
-    
-    def forward(self, x):
-        """
-        x: (batch, in_channels, n_bins, len) Time-Frequency representation
-        output: (batch, hidden_channels * len(harmonics), n_bins, len) Chord Convolution
-        """
-        x = torch.cat([conv(x) for conv in self.convs], dim=1)
-        x = self.norm(x)
         x = self.act(x)
         return x
 

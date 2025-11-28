@@ -50,7 +50,7 @@ class MusicNetData(Dataset):
         idx: 0 ~ len(self) - 1
         return: (input, output)
         input: .wav: [channel, time]
-        output: .npy: [mix, channel, time]
+        output: .npy: [mix, notes, time]
         """
         data_path = self.data_paths[idx]
 

@@ -52,7 +52,41 @@ def CQT_loss(pred, target):
     """
     return torch.nn.functional.mse_loss(pred, target, reduction='sum')
 
-def cluster_loss(embs, targets, mode = 0):
+
+def InfoNCE_loss(embs, targets, temperature = 0.1):
+    """
+    计算InfoNCE损失
+    embs: [batch, dim, freqs, time] 记录了每个时频单元的embedding
+    targets: [batch, mix, freqs, time] 传入midiarray即可，大于零的为本类音符
+    """
+    B, D, F, T = embs.size()
+    losses = []
+    for batch in range(B):
+        target = (targets[batch] > 0.1).float() # [M, F, T] 把大于0的都变成1
+        M = target.size(0)
+        target_mask = target.sum(dim=0, keepdim=False) > 0  # [F, T]
+        V = embs[batch].permute(1, 2, 0)[target_mask, :].view(-1, D) # [N, D]
+        Y = target.permute(1, 2, 0)[target_mask, :].view(-1, M) # [N, M]
+
+        VTV = torch.matmul(V, V.t()) / temperature # [N, N]
+        YTY = torch.matmul(Y, Y.t()) # [N, N]
+        YTY.clamp_(max=1, min=0)
+        # Mask out self-comparison
+        diag_mask = torch.eye(VTV.size(0), device=VTV.device).bool()
+        VTV.masked_fill_(diag_mask, float('-inf'))
+        YTY.masked_fill_(diag_mask, 0)
+
+        exp_VTV = torch.exp(VTV)
+        pos_exp = exp_VTV * (YTY > 0.5).float()
+        pos_sum = pos_exp.sum(dim=1)
+        total_sum = exp_VTV.sum(dim=1)
+        loss = -torch.log(pos_sum / total_sum + 1e-8).sum()
+        losses.append(loss)
+
+    return torch.stack(losses).sum()
+
+
+def cluster_loss(embs, targets, mode = 1):
     """
     计算聚类损失：谱聚类相似度损失（余弦相似度） 要求输入已经幅度归一化
     Deep clustering: Discriminative embeddings for segmentation and separation
@@ -61,31 +95,38 @@ def cluster_loss(embs, targets, mode = 0):
     mode: 0: 对负数无要求，1: 对负数要求正交，2: 对负数要求低一些
     """
     B, D, F, T = embs.size()
-    M = targets.size(1)
-    targets = (targets > 0.1).float() # 把大于0的都变成1
     losses = []
     for batch in range(B):
-        target = targets[batch] # [M, F, T]
+        target = (targets[batch] > 0.1).float() # [M, F, T] 把大于0的都变成1
+        M = target.size(0)
         target_mask = target.sum(dim=0, keepdim=False) > 0  # [F, T]
         V = embs[batch].permute(1, 2, 0)[target_mask, :].view(-1, D) # [N, D]
         Y = target.permute(1, 2, 0)[target_mask, :].view(-1, M) # [N, M]
 
         if mode == 1: # 要求正交 简化
-            VTV = torch.matmul(V.transpose(-1, -2), V) # [D, D]
-            YTY = torch.matmul(Y.transpose(-1, -2), Y) # [M, M]
-            VTY = torch.matmul(V.transpose(-1, -2), Y) # [D, M]
+            VTV = torch.matmul(V.t(), V) # [D, D]
+            YTY = torch.matmul(Y.t(), Y) # [M, M]
+            VTY = torch.matmul(V.t(), Y) # [D, M]
             losses.append(VTV.pow(2).sum() + YTY.pow(2).sum() - 2 * VTY.pow(2).sum())
         elif mode == 2: # 对负数要求低一些，但不能简化，开销大
-            VVT = torch.matmul(V, V.transpose(-1, -2)) # [N, N]
-            YYT = torch.matmul(Y, Y.transpose(-1, -2)) # [N, N]
-            YYT[range(YYT.size(0)), range(YYT.size(0))] = 1
+            VVT = torch.matmul(V, V.t()) # [N, N]
+            YYT = torch.matmul(Y, Y.t()) # [N, N]
+            YYT.clamp_(max=1, min=0)
             losses.append((torch.nn.functional.leaky_relu(VVT, 0.3) - YYT).pow(2).sum())
-        else: # 对负数无要求
-            VVT = torch.matmul(V, V.transpose(-1, -2)) # [N, N]
-            YYT = torch.matmul(Y, Y.transpose(-1, -2)) # [N, N]
-            YYT[range(YYT.size(0)), range(YYT.size(0))] = 1
+        elif mode == 0: # 对负数无要求
+            VVT = torch.matmul(V, V.t()) # [N, N]
+            YYT = torch.matmul(Y, Y.t()) # [N, N]
+            YYT.clamp_(max=1, min=0)
             mask = (YYT < 0.01) & (VVT < 0)
             losses.append((VVT * (~mask).float() - YYT).pow(2).sum())
+        elif mode == 3:
+            VVT = torch.matmul(V, V.t()) # [N, N]
+            YYT = torch.matmul(Y, Y.t()) # [N, N]
+            YYT.clamp_(max=1, min=0)
+            VVT = (VVT + 1.) * 0.49999  # 归一化到0-1之间
+            losses.append(focal_loss(YYT, VVT, gamma=0, alpha=0.8))
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
 
     return torch.stack(losses).sum()
 

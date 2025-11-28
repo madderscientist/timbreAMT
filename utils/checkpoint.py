@@ -11,12 +11,17 @@ def save_checkpoint(state, is_best = False, filename='checkpoint.pth'):
         shutil.copyfile(filename, os.path.join(bestFolder, 'best_'+filename))
 
 def save_ckpt_template(epoch, model, min_loss, loss, optimizer, checkpoint_filename):
+    # optimizer: 可以是 an optimizer 或 [optimizer1, optimizer2, ...]
+    if isinstance(optimizer, (list, tuple)):
+        optimizer_state = [opt.state_dict() for opt in optimizer]
+    else:
+        optimizer_state = optimizer.state_dict()
     save_checkpoint({
         'epoch': epoch,
         'state_dict': model.state_dict(),
         'min_loss': min_loss,
         'avg_loss': loss,   # 一般是验证集上的损失
-        'optimizer': optimizer.state_dict(),
+        'optimizer': optimizer_state,
     }, loss < min_loss, filename = checkpoint_filename)
 
 def load_ckpt_template(model, optimizer, checkpoint_path):
@@ -24,7 +29,11 @@ def load_ckpt_template(model, optimizer, checkpoint_path):
     if os.path.isfile(checkpoint_path):
         checkpoint = torch.load(checkpoint_path, weights_only=False, map_location=device)
         model.load_state_dict(checkpoint['state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
+        if isinstance(optimizer, (list, tuple)):
+            for opt, state in zip(optimizer, checkpoint['optimizer']):
+                opt.load_state_dict(state)
+        else:
+            optimizer.load_state_dict(checkpoint['optimizer'])
         min_loss = checkpoint['min_loss']
         avg_loss = checkpoint['avg_loss']
         epoch_now = checkpoint['epoch']

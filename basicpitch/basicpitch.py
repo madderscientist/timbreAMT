@@ -90,5 +90,5 @@ class BasicPitch_all(BasicPitch):
 if __name__ == "__main__":
     # 输出参数量
     model = BasicPitch()
-    total_params = sum(p.numel() for p in model.parameters())
+    total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total number of parameters: {total_params}")    # 56517

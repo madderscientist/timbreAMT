@@ -7,7 +7,7 @@
 乐器事件不在头文件，而是每个有音符的音轨
 """
 
-from typing import Union, List, Tuple, Optional
+from typing import Any, Union, List, Tuple, Optional
 import mido
 import numpy as np
 
@@ -633,7 +633,7 @@ def notes2midi(
 
     Args:
         notes: list of dict 事件列表，每一项由以下组成元素：
-            onset: float 开始时间（用[0]索引）
+            onset: float 开始时间（用[0]索引）单位: 帧
             offset: float 结束时间
             note: int 音符
             velocity: float 音符力度[0, 1]
@@ -674,6 +674,53 @@ def notes2midi(
             track.append(mido.Message('note_on', note=note, velocity=int(round(velocity*127)), time=time))
     
     return mid
+
+
+def notes2numpy(
+        notes: List[Tuple[int, int, int, *tuple[Any, ...]]],
+        note_range: Tuple[int, int] = (24, 107),
+        max_time_steps: Optional[int] = None,
+        need_onset: bool = True,
+        need_velocity: bool = False
+    ) -> np.ndarray:
+    """
+    将音符列表转换为numpy数组
+
+    Args:
+        notes: list of dict 事件列表，每一项由以下组成元素：
+            onset: float 开始时间（用[0]索引）单位: 帧
+            offset: float 结束时间
+            note: int 音符
+        note_range: Tuple[int, int] 音符范围，包含首尾
+        max_time_steps: Optional[int] 最大时间步长，默认为None表示自动计算
+        need_onset: bool 是否需要onset信息
+        need_velocity: bool 是否需要velocity信息，若需要则notes中每个音符的第四个元素为velocity值，范围[0, 1]
+    ) -> np.ndarray:
+    """
+    if max_time_steps is None:
+        max_time_steps = 0
+        for onset, offset, note, *rest in notes:
+            if offset > max_time_steps:
+                max_time_steps = offset
+    num_notes = note_range[1] - note_range[0] + 1
+    piano_roll = np.zeros((num_notes, max_time_steps), dtype=np.float32)
+    for onset, offset, note, *rest in notes:
+        if onset >= max_time_steps:
+            continue
+        note_idx = note - note_range[0]
+        if note_idx < 0 or note_idx >= num_notes:
+            continue
+        if need_velocity and len(rest) > 0:
+            velocity = rest[0]
+        else:
+            velocity = 1.0
+        offset = min(offset, max_time_steps)
+        if need_onset:
+            piano_roll[note_idx, onset] = velocity * 2  # onset
+            piano_roll[note_idx, onset+1:offset] = velocity
+        else:
+            piano_roll[note_idx, onset:offset] = velocity
+    return piano_roll
 
 
 def output2midi(

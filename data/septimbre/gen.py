@@ -114,8 +114,8 @@ class Notes:
 
         offset_dist = truncnorm(
             (-last_note[2] - 0.5) / self.len_sigma, # 保证本音符不会在上一个音符前面
-            # 最大空余设置成平均音长的一半了，因为这样能更密集
-            (self.len_mean / 2 + 0.5) / self.len_sigma, # 0.5因为round是四舍五入，需要补偿边沿
+            # 最大空余设置音长的1/3了，因为这样能更密集
+            (last_note[2] / 3) / self.len_sigma, # 0.5因为round是四舍五入，需要补偿边沿
             loc=self.offset_mean,
             scale=self.len_sigma
         )

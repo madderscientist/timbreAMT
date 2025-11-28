@@ -27,21 +27,8 @@ __pycache__/
 /data/timbreMetric/midiPitch
 
 # 模型评估的中间文件
-/evaluate/PHENICX_processed/
-/evaluate/URMP_processed/
-/evaluate/BACH10_processed/
-/evaluate/basicamt/
-/evaluate/basicamt_fixCQT/
-/evaluate/basicamt_noDilation/
-/evaluate/basicamt_batchnorm/
-/evaluate/basicamt_layernorm/
-/evaluate/basicamt_BCE/
-/evaluate/basicamt_learnableCQT/
-/evaluate/basicamt_nolog/
-/evaluate/onsets_frames/
-/evaluate/basicpitch/
-/evaluate/basicpitch_raw/
-/evaluate/septimbre/
+/evaluate/*/
+!/evaluate/*.*
 
 # 测试文件夹
 /test/

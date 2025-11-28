@@ -63,7 +63,14 @@ def frame_eval(note: np.ndarray, midi: np.ndarray, threshold = 0.5, s_per_frame 
     note: (freqs, times)
     midi: (freqs, times)
     """
-    binary_note = (note > threshold).astype(int)    # 二值化
+    binary_note = (note > threshold).astype(int)    # 二值化    
+    if binary_note.shape[1] != midi.shape[1]:
+        if binary_note.shape[1] < midi.shape[1]:
+            pad_width = midi.shape[1] - binary_note.shape[1]
+            binary_note = np.pad(binary_note, ((0, 0), (0, pad_width)), mode='constant')
+        else:
+            pad_width = binary_note.shape[1] - midi.shape[1]
+            midi = np.pad(midi, ((0, 0), (0, pad_width)), mode='constant')
     # 这个min_len_是原位操作，会修改输入
     est_pitch = roll2evalarray(min_len_(binary_note, 3), freqmap)
     ref_pitch = roll2evalarray(midi, freqmap)
@@ -84,7 +91,16 @@ def evaluate_frame_dataset(npy_pathes, threshold = 0.5, log = True):
     f1s = []
     for npy_file in npy_pathes:
         result = np.load(npy_file)
-        evaluation = frame_eval(result[1], result[2], threshold)
+        if npy_file.endswith('.npz'):
+            note = result['frame']
+            midi = result['midi']
+        else:
+            note = result[1]
+            midi = result[2]
+        # 如果midi是三维的，取最大值
+        if midi.ndim == 3:
+            midi = midi.max(axis=0)
+        evaluation = frame_eval(note, midi, threshold)
         acc = evaluation['Accuracy']
         p = evaluation['Precision']
         r = evaluation['Recall']
@@ -199,7 +215,18 @@ def evaluate_note_dataset(npy_pathes, frame_thresh = 0.5, onset_thresh = 0.4, lo
 
     for npy_file in npy_pathes:
         result = np.load(npy_file)  # onset, note, midi
-        p, r, f, avg_overlap_ratio = note_eval(result[1], result[0], result[2], frame_thresh=frame_thresh, onset_thresh=onset_thresh)
+        if npy_file.endswith('.npz'):
+            frame = result['frame']
+            onset = result['onset']
+            midi = result['midi']
+        else:
+            frame = result[1]
+            onset = result[0]
+            midi = result[2]
+        # 如果midi是三维的，取最大值
+        if midi.ndim == 3:
+            midi = midi.max(axis=0)
+        p, r, f, avg_overlap_ratio = note_eval(frame, onset, midi, frame_thresh=frame_thresh, onset_thresh=onset_thresh)
         ps.append(p)
         rs.append(r)
         fs.append(f)

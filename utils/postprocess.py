@@ -190,6 +190,48 @@ def output_to_notes_polyphonic(
     return note_events
 
 
+def cluster_notes(
+    frames: np.ndarray,
+    onsets: np.ndarray,
+    emb: np.ndarray,
+    n_clusters: int,
+    midi_offset = 24,
+    **note_kwargs
+)-> List[List[Tuple[int, int, int, float]]]:
+    note_events = output_to_notes_polyphonic(
+        frames,
+        onsets,
+        midi_offset = midi_offset,
+        **note_kwargs
+    )
+    embeddings = []
+    for start, end, f, amp in note_events:
+        f = f - midi_offset
+        _mask = frames[f, start:end]  # (end-start, )
+        _emb = emb[:, f, start:end] # (18, end-start)
+        # weight = np.ones_like(_mask)
+        weight = _mask
+        # weight = _mask * _mask
+        # weight = np.sqrt(_mask)
+        # weight = np.exp(_mask * _mask)
+        weighted_emb = (_emb * weight).sum(axis=1)  # (18, )
+        normalized_emb = weighted_emb / np.linalg.norm(weighted_emb)
+        embeddings.append(normalized_emb)
+
+    from sklearn.cluster import SpectralClustering
+    from sklearn.metrics.pairwise import cosine_similarity
+
+    similarity_matrix = cosine_similarity(np.array(embeddings))
+    spectral = SpectralClustering(n_clusters=n_clusters, affinity='precomputed', assign_labels="cluster_qr")
+    labels = spectral.fit_predict(np.exp(similarity_matrix))
+
+    clustered_notes = [[] for _ in range(n_clusters)]
+    for label, note in zip(labels, note_events):
+        clustered_notes[label].append(note)
+    
+    return clustered_notes
+
+
 def OTSU_threshold(image: np.ndarray, bins: int = 256) -> float:
     """
     Calculate the threshold value using the OTSU method.
