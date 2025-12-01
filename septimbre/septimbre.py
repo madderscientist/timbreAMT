@@ -217,3 +217,7 @@ if __name__ == "__main__":
     model = SepTimbreAMT(CQTconfig=CONFIG.CQT)
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total number of parameters: {total_params}")
+    note_branch_params = sum(p.numel() for p in model.note_branch.parameters() if p.requires_grad)
+    print(f"NotePredictBranch parameters: {note_branch_params}")
+    encoder_params = sum(p.numel() for p in model.encoder.parameters() if p.requires_grad)
+    print(f"Encoder parameters: {encoder_params}")

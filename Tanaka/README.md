@@ -12,3 +12,6 @@ MULTI-INSTRUMENT MUSIC TRANSCRIPTION BASED ON DEEP SPHERICAL CLUSTERING OF SPECT
 - 损失函数用的我的，因为已经证明更好
 
 这个模型的缺点显而易见——参数量超多，因此非常容易过拟合，所以评估效果不太行。可能是我砍掉了音频分离的监督分支，导致性能下降。
+
+## 导出失败
+疑似pytorch的bug。导出onnx失败，encoder的动态维度一直被固化
