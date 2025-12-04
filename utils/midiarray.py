@@ -1,10 +1,11 @@
 """
 用于txt<-->MIDI<-->numpy互转，函数名大多包含"2"(to)
-0表示没有音符
-1表示有音符
-2表示onset
-忽略了响度信息
-乐器事件不在头文件，而是每个有音符的音轨
+0表示没有音符 | 0 represents no note
+1表示有音符 | 1 represents note on
+2表示onset | 2 represents onset
+忽略了响度信息 | velocity is ignored in numpy representation
+默认音符范围为C1(24)到B7(107) | Default note range is C1(24) to B7(107)
+乐器事件不在头文件，而是每个有音符的音轨 | Instrument events are not in the header but in each track with notes
 """
 
 from typing import Any, Union, List, Tuple, Optional
@@ -23,13 +24,16 @@ def midi2numpy(
         time_first: bool = False,
         track_separate: bool = False
     ) -> np.ndarray:
-    """
-    midi_file: midi文件路径 或者 mido.MidiFile对象
-    time_step: 时间步长，单位秒
-    note_range: 音符范围
-    time_first: 时间是否是第一个维度
-    track_separate: 是否分开每个音轨
-    return: numpy数组, shape=(num_tracks, num_notes, num_time_steps) if track_separate else (num_notes, num_time_steps)
+    """将midi文件转换为numpy数组 Convert a MIDI file to a numpy array
+
+    Args:
+        midi_file: midi文件路径 或者 mido.MidiFile对象 MIDI file path or mido.MidiFile object
+        time_step: 时间步长，单位秒 Time step in seconds
+        note_range: 音符范围 note range, midi encoding
+        time_first: 时间是否是第一个维度 Whether time is the first dimension
+        track_separate: 是否分开每个音轨 Whether to separate each track
+    Returns:
+        numpy array, shape=(num_tracks, num_notes, num_time_steps) if track_separate else (num_notes, num_time_steps)
     """
     mid = mido.MidiFile(midi_file) if isinstance(midi_file, str) else midi_file
     num_notes = note_range[1] - note_range[0] + 1
@@ -123,12 +127,13 @@ def numpy2midi(
         instrument: Union[int, List[int]] = 0
     ) -> mido.MidiFile:
     """
-    arr: numpy数组, 第一维tracks可省略, shape=(tracks, num_time_steps, num_notes) if time_first else (tracks, num_notes, num_time_steps)
-    time_step: 时间步长，单位秒
-    time_first: 时间是否是第一个维度
-    min_note: 最小音符的midi值 默认24为C1
-    random: 是否为midi事件添加随机性
-    instrument: 乐器的midi编号 可以是一个数组表示每一维度的乐器 缺少的会用最后一个作为后面音轨的乐器，多则忽略
+    Args:
+        arr: numpy array, the first dimension "tracks" can be omitted, shape=(tracks, num_time_steps, num_notes) if time_first else (tracks, num_notes, num_time_steps)
+        time_step: 时间步长，单位秒 Time step in seconds
+        time_first: 时间是否是第一个维度 Whether time is the first dimension
+        min_note: 最小音符的midi值 默认24为C1 Minimum MIDI value of the lowest note, default is 24 (C1)
+        random: 是否为midi事件添加随机性 Whether to add randomness to MIDI events
+        instrument: 乐器的midi编号 可以是一个数组表示每一维度的乐器 缺少的会用最后一个作为后面音轨的乐器，多则忽略 MIDI instrument number, can be an array representing the instrument for each dimension. Missing ones will use the last one for subsequent tracks, extra ones will be ignored.
     """
     if arr.ndim == 2:
         arr = np.expand_dims(arr, axis=0)
@@ -207,10 +212,13 @@ def numpy2midi(
 def midiInstruments(
         midi_file: Union[str, mido.MidiFile]
     ) -> List[int]:
-    """
-    获取midi文件中使用的乐器编号
-    midi_file: midi文件路径 或者 mido.MidiFile对象
-    return: 乐器编号列表 如果某个音轨没有乐器事件则设置为0
+    """获取midi文件中使用的乐器编号 Get the instrument numbers used in the MIDI file
+
+    Args:
+        midi_file: midi文件路径 或者 mido.MidiFile对象 MIDI file path or mido.MidiFile object
+
+    Returns:
+        乐器编号列表 如果某个音轨没有乐器事件则设置为0 List of instrument numbers, if a track has no instrument event, it is set to 0
     """
     mid = mido.MidiFile(midi_file) if isinstance(midi_file, str) else midi_file
     instruments = []
@@ -234,15 +242,17 @@ def annotation2midi(
         time_unit: float = 1.,
         instrument: int = 0
     ) -> mido.MidiFile:
-    """
-    将文本标注转换为midi
-    path: str 文件路径
-    cols: list 每个元素是一个列名，对应的列名在text中的位置，note和freq必须有一个（优先note）、onset必须有、dur和offset必须有一个（优先offset）
-    row_offset: int 行的偏移量
-    sep: str 分隔符
-    time_unit: float 相对于秒的时间单位
-    instrument: int 乐器的midi编号
-    return: mido.MidiFile
+    """将文本标注转换为 midi Convert text annotation to MIDI
+
+    Args:
+        path: 文件路径 File path
+        cols: 每个元素是一个列名，对应的列名在text中的位置，note和freq必须有一个（优先note）、onset必须有、dur和offset必须有一个（优先offset）
+        row_offset: 行的偏移量
+        sep: 分隔符
+        time_unit: 相对于秒的时间单位
+        instrument: 乐器的midi编号
+    Returns:
+        mido.MidiFile
     """
     # 检查参数
     if "onset" not in cols:
@@ -339,12 +349,14 @@ def annotation2midi(
 
 
 def midiarray_add(midiarry1: np.ndarray, midiarry2: np.ndarray, time_first: bool = False) -> np.ndarray:
-    """
-    两个有midi含义的np.ndarray相加，含义是音轨合并
-    midiarray1: np.ndarray 要求只能是2维
-    midiarray2: np.ndarray 要求只能是2维
-    time_first: 时间是否是第一个维度
-    return: MidiArray
+    """两个有midi含义的np.ndarray相加，含义是音轨合并 add two midi-like np.ndarrays, meaning merging tracks
+    
+    Args:
+        midiarray1: np.ndarray 只能是2维 dim=notes,time
+        midiarray2: np.ndarray 只能是2维 dim=notes,time
+        time_first: 时间是否是第一个维度 Whether time is the first dimension
+    Returns:
+        MidiArray
     """
     if midiarry1.ndim != 2 or midiarry2.ndim != 2:
         raise ValueError("Both input arrays must be 2-dimensional")
@@ -375,8 +387,10 @@ def midi_merge(midis: List[mido.MidiFile]) -> mido.MidiFile:
     """
     合并多个midi文件 要求都是本脚本生成的midi文件，这样可以保证头文件一样
     关注音符和与乐器
-    midis: list of mido.MidiFile
-    return: mido.MidiFile
+    Args:
+        midis: list of mido.MidiFile
+    Returns:
+        mido.MidiFile
     """
     import copy
 
@@ -436,11 +450,12 @@ def freq_map(note_range: Tuple[int, int] = (24, 107), A4: float = 440):
 
 
 def roll2evalarray(roll: np.ndarray, freq_map: np.ndarray) -> List[np.ndarray]:
-    """
-    Convert a piano roll (0 or 1(greater than 0)) to an array of note values which mir_eval reqires.
-    :param roll: The piano roll to convert, which has been binarized. [F, T]
-    :param freq_map: The frequency map to convert the piano roll to note values. [F]
-    :return: The array of note values. [np.array]*T
+    """Convert a piano roll (0 or 1(greater than 0)) to an array of note values which mir_eval reqires.
+    Args:
+        roll: The piano roll to convert, which has been binarized. [F, T]
+        freq_map: The frequency map to convert the piano roll to note values. [F]
+    Returns:
+        The array of note values. [np.array]*T
     """
     freq_num, time_num = roll.shape
     activate = roll.astype(bool).T # (time_num, freq_num)
@@ -507,14 +522,15 @@ def midi_randomize(
 def array2notes(
         arr: np.ndarray,
     ) -> List[List[Tuple[int, int, int]]]:
-    """将numpy数组转换为音符列表
+    """将numpy数组转换为音符列表 Convert a numpy array to a list of notes
 
     Args:
         arr: numpy数组, shape=(num_tracks, num_notes, num_time_steps) or (num_notes, num_time_steps)
-        time_step: float 时间步长，单位秒
+        time_step: float 时间步长，单位秒 Time step in seconds
     
     Returns:
         音符列表的列表, 每一项代表一个音轨, 每个音轨由多个音符组成, 每个音符由(onset, offset, note)组成，时间单位为frame index
+        a list of lists of notes, each item represents a track, each track consists of multiple notes, each note consists of (onset, offset, note), time unit is frame index
     """
     if arr.ndim == 2:
         arr = np.expand_dims(arr, axis=0)
@@ -545,11 +561,11 @@ def midi2notes(
         midi_file: Union[str, mido.MidiFile],
         note_range: Tuple[int, int] = (0, 127)
     ) -> List[List[Tuple[float, float, int, float]]]:
-    """将midi文件转换为音符列表
+    """将midi文件转换为音符列表 Convert a MIDI file to a list of notes
 
     Args:
-        midi_file: midi文件路径 或者 mido.MidiFile对象
-        note_range: 音符范围, midi编码
+        midi_file: midi文件路径 或者 mido.MidiFile对象 MIDI file path or mido.MidiFile object
+        note_range: 音符范围, midi编码 note range, midi encoding
     Returns:
         音符列表的列表, 每一项代表一个音轨, 每个音轨由多个音符组成, 每个音符由(onset, offset, note, velocity)组成，时间单位为秒，velocity为[0, 1]之间的浮点数
     """
@@ -628,8 +644,7 @@ def notes2midi(
         time_step: float = 256/22050,
         instrument: int = 4
     ) -> mido.MidiFile:
-    """
-    将音符列表转换为midi文件
+    """将音符列表转换为midi文件 Convert a list of notes to a MIDI file
 
     Args:
         notes: list of dict 事件列表，每一项由以下组成元素：
@@ -683,8 +698,7 @@ def notes2numpy(
         need_onset: bool = True,
         need_velocity: bool = False
     ) -> np.ndarray:
-    """
-    将音符列表转换为numpy数组
+    """将音符列表转换为numpy数组 Convert a list of notes to a numpy array
 
     Args:
         notes: list of dict 事件列表，每一项由以下组成元素：
@@ -695,7 +709,8 @@ def notes2numpy(
         max_time_steps: Optional[int] 最大时间步长，默认为None表示自动计算
         need_onset: bool 是否需要onset信息
         need_velocity: bool 是否需要velocity信息，若需要则notes中每个音符的第四个元素为velocity值，范围[0, 1]
-    ) -> np.ndarray:
+    Returns:
+        numpy array, shape=(num_notes, num_time_steps)
     """
     if max_time_steps is None:
         max_time_steps = 0
@@ -731,14 +746,17 @@ def output2midi(
         onset_threshold: float = 0.4,
         min_note_sec: float = 0.09
     ) -> mido.MidiFile:
-    """
-    将输出转换为midi文件
-    onset: np.array onset预测结果 [F, T]
-    frame: np.array frame预测结果 [F, T]
-    time_step: float 时间步长，单位秒
-    frame_threshold: float frame阈值
-    onset_threshold: float onset阈值
-    min_note_sec: float 最小音符长度，单位秒
+    """将输出转换为midi文件 Convert model output to MIDI file
+
+    Args:
+        onset: np.array onset预测结果 [F, T]
+        frame: np.array frame预测结果 [F, T]
+        time_step: float 时间步长，单位秒
+        frame_threshold: float frame阈值
+        onset_threshold: float onset阈值
+        min_note_sec: float 最小音符长度，单位秒
+    Returns:
+        mido.MidiFile
     """
     from .postprocess import output_to_notes_polyphonic
     note_events = output_to_notes_polyphonic(

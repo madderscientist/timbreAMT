@@ -4,7 +4,7 @@
 - PHENICX
 - URMP
 
-它们的共性是都比较小，方便下载，多音色，适合用于评估；且均为现实演奏的录制，结果更令人信服。
+它们的共性是都比较小，方便下载，多音色，每个乐器有单独的音频，适合用于评估；且均为现实演奏的录制，结果更令人信服。
 
 首先要对数据集进行处理：音频要转换为22050Hz、标注要转化为统一格式（选择了mid，之所以不用数据集中的midi是因为那是原曲的midi而不是演奏的midi。演奏的标注一般以表格的形式给出），每个数据集的处理分别在：
 - [bach10.ipynb](bach10.ipynb)
@@ -27,69 +27,41 @@
 - **onsets&frames**: 一个参数量比较大的模型，只保留了onset和frame头
 
 ### 音色分离转录
-- septimbre: 我的“音色分离转录”模型
-
-暂时找不到可以比较的同类开源模型。帧级评估如下：
-<table border="2">
-  <caption>音色分离转录模型septimbre评估结果</caption>
-  <thead>
-    <tr>
-      <th rowspan="1">类型</th>
-      <th colspan="4">音色无关转录</th>
-      <th colspan="4">音色分离转录</th>
-    </tr>
-    <tr>
-      <th>混合数</th>
-      <th>Acc</th>
-      <th>P</th>
-      <th>R</th>
-      <th>F1</th>
-      <th>Acc</th>
-      <th>P</th>
-      <th>R</th>
-      <th>F1</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>2</td>
-      <td>0.680</td>
-      <td>0.823</td>
-      <td>0.789</td>
-      <td>0.804</td>
-      <td>0.419</td>
-      <td>0.586</td>
-      <td>0.558</td>
-      <td>0.563</td>
-    </tr>
-    <tr>
-      <td>3</td>
-      <td>0.625</td>
-      <td>0.786</td>
-      <td>0.749</td>
-      <td>0.766</td>
-      <td>0.270</td>
-      <td>0.436</td>
-      <td>0.402</td>
-      <td>0.407</td>
-    </tr>
-  </tbody>
-</table>
-
-可以发现混合数越多效果越差，且进行分离后准确率大打折扣，这非常正常；但即使不进行分离，也比不过basicamt，说明聚类损失影响了amt损失。
+- **septimbre**: 我的“音色分离转录”模型
+- **Tanaka**: 第一个用深度聚类实现音色分离转录的论文
 
 ## 文件结构
 ```
 │  eval_basicamt.ipynb      [eval my timbre-independent transcription model]
+|  eval_basicamt_nolog.ipynb  [my model, but without log]
+|  eval_basicamt_batchnorm.ipynb  [my model, but replacing EnergyNorm with BatchNorm]
+|  eval_basicamt_layernorm.ipynb  [my model, but replacing EnergyNorm with LayerNorm]
+|  eval_basicamt_BCE.ipynb  [my model, but replacing Focal loss with BasicPitch's loss]
+|  eval_basicamt_noDilation.ipynb [my model, but with BasicPitch's 39 kernel]
+|  eval_basicamt_learnableCQT.ipynb  [my model, but with learnable CQT]
+|
 │  eval_basicpitch.ipynb    [eval basic-pitch model trained with my data]
-│  eval_basicpitch_raw.ipynb[eval basic-pitch model trained by its author]
+│  eval_basicpitch_raw.ipynb[eval basic-pitch model trained by its author]\
+|
+|  eval_onsetsAndFrames.ipynb [eval onsets&frames model]
+|
 │  eval_septimbre.ipynb     [eval my timbre-separation transcription model]
+|  eval_septimbre_diceph.ipynb [my model, but the two branches share the first residual block]
+|  eval_septimbre_rescale.ipynb [my model, but frame activation is used to rescale timbre encoding]
+|  eval_septimbre_layernorm.ipynb  [my model, but replacing CerterNorm with LayerNorm]
+|  eval_septimbre_orthogonal.ipynb [my model, but trained with origin cluster loss]
+|
+|  eval_tanaka.ipynb        [eval Tanaka's model]
+|
+|  findThreshold.ipynb      [try to find some relationship between input and threshold, but failed]
 |
 │  bach10.ipynb     [pre-process of BACH10 dataset]
 │  phenicx.ipynb    [pre-process of PHENICX dataset]
 │  urmp.ipynb       [pre-process of URMP dataset]
 |
 │  README.md        [this file]
+|  instrument_agnostic_eval_utils.py [utils for timbre-agnostic transcription]
+|  timbre_sepatate_eval_utils.py     [utils for timbre-separated transcription]
 │          
 ├─basicamt          [from ./eval_basicamt.ipynb]
 │  ├─BACH10_eval

@@ -1,35 +1,86 @@
-# 基于人工智能的多音色自动复调音乐转录研究
-目标是实现 轻量级的 音源分离 扒谱AI，其中音源分离不依赖训练集而是动态学习，即对训练集之外的音色有普适性。
-- 轻量级：为了让研究切切实实落地应用。最终比baseline轻量了一半，成功部署到[notedigger](https://madderscientist.github.io/noteDigger/)中。其实如今已经有很多很优秀的分离扒谱商品了，而转换为token、用大模型的方法实现也有一统所有领域的趋势。所以选择轻量也是避其锋芒的做法，旨在探索一种全新的原理。
-- 音源分离：根据音色进行分离，称为“盲源分离”更确切，因为目标是不依赖训练集。
-- 扒谱：学名“音乐转录”，结合“音源分离”指“扒带”，即输入为多音色音频，输出多轨音符，每一轨对应一种音色。
+![architecture](./readmeSRC/arch.jpg)
+
+#  A Lightweight Architecture for Multi-instrument Transcription with Practical Optimizations
+目标是实现 轻量级的 音源分离 扒谱AI，其中音源分离不依赖训练集，而能对训练集之外的音色有普适性。
+
+The goal of this project is to develop a lightweight AI system for audio source separation and music transcription that generalizes well beyond the training data — specifically, one that can handle unseen timbres without relying on pre-defined instrument categories in the training set.
+
+
+- **轻量级**：为了让研究切切实实落地应用。最终比baseline轻量了一半，成功部署到[notedigger](https://madderscientist.github.io/noteDigger/)中。其实如今已经有很多很优秀的分离扒谱商品了，而转换为token、用大模型的方法实现也有一统所有领域的趋势（特指MT3）。所以选择轻量也是避其锋芒的做法。但轻量也极大限制了能用的技术。
++ **Lightweight**: Designed for real-world applicability. The final model is half the size of the baseline and has been successfully deployed in [noteDigger](https://madderscientist.github.io/noteDigger/). While many excellent commercial transcription tools already exist, and large models using tokenization (e.g., MT3) are trending toward universal solutions, we deliberately chose a lightweight approach to avoid direct competition. However, this constraint significantly limits the range of applicable techniques.
+- **音源分离**：根据音色进行分离，称为“盲源分离”更确切，因为目标是不依赖训练集。和一般的“源分离”不同的是，本任务直接在“音符”的层面进行分离，而不是重构分离后的频谱。
++ **Source Separation**: More precisely termed blind source separation, as it aims to separate instruments based purely on timbre without prior knowledge from a training set. Unlike conventional source separation (which reconstructs separated spectrograms), our method operates directly at the note level.
+- **扒谱**：学名“音乐转录”，结合“音源分离”指“扒带”，即输入为多音色音频，输出多轨音符，每一轨对应一种音色。
++ **Music Transcription**: Combined with source separation, this refers to "transcribing multi-track recordings": given a polyphonic audio mixture containing multiple timbres, the system outputs multiple note tracks, each corresponding to a distinct timbre.
 
 现有音色分离转录方法的缺点是没有泛化性，体现在两点上：
+
+Current timbre-aware transcription approaches suffer from poor generalization, primarily due to two issues:
+
 1. 严重依赖数据集，后果是不认识训练集之外的音色。相比于“分离”他们更像是“分类”，需要制定好要有哪些类别的音色，然后通过喂数据使模型“记住”各个音色。特点是精度很高，特别是针对某一种乐器的扒谱模型。但是适用性太窄了，除非到MT3这种大模型时才会有显著突破。
++ Heavy reliance on datasets: Models essentially "memorize" instrument classes from training data rather than learning to distinguish timbres in a generalizable way. They perform exceptionally well on specific instruments seen during training but fail completely on unseen ones. Only very large models like MT3 begin to overcome this limitation.
 2. 分离能力受结构限制。语音分离领域的一个难点是“说话人数目未知”，而如果做“分类”，则一定要确定类别数。所以二分离的模型不能用于三分离，适用性受限。
++ Architectural constraints on separation capacity: Similar to challenges in speech separation (e.g., unknown number of speakers), classification models require a fixed number of output sources. A model trained for two instruments cannot handle three, severely limiting practical utility.
 
-本研究的目的就是解决如上两点。人类对音色的跟踪完全不是这样的，一个婴儿就能区分出音色，而无需认识任何乐器，也就是说做的不是“音色的分类”而是“音色的区分”。当我们听到某音色的音符后，我们先会和记忆中的音色比较，如果相近就归为一类，如果不同则认为是新的音色；而“记忆”里的音色，一部分是之前习得（类比训练集），更重要的是听这个音频前面部分时建立起来的记忆，相当于动态学习音色、动态归类。这个“动态性”就是实现研究目标的关键。
+本研究的目的就是解决如上两点，此外追求易用性——在浏览器中就可以使用。人类对音色的跟踪完全不是这样的，我们能区分出音色，而无需知道乐器叫什么，也就是说做的不是“音色的分类”而是“音色的区分”。以下是我的猜想：当我们听到某音色的音符后，我们先会和记忆中的音色比较，如果相近就归为一类，如果不同则认为是新的音色；而“记忆”里的音色，一部分是之前习得（类比训练集），更重要的是听这个音频前面部分时建立起来的记忆，相当于动态学习音色、动态归类。这个“动态性”就是实现研究目标的关键。
 
-由于直接实现最终目标过于困难，所以本研究将其拆解为两部分：
-1. 先实现“音色无关转录”，即部根据音色分类，参考的是BasicPitch，并进行了改进。
-2. 再实现“音色分离转录”，基本思想是对音色进行聚类，给“音色无关转录”的音符分配标签。
+The goal of this research is to address the two issues mentioned above, while also prioritizing usability—specifically, enabling full functionality directly within a web browser. Human perception of timbre does not work by classifying instruments into predefined categories; rather, we distinguish timbres without necessarily knowing the instrument names. In other words, the task is not "timbre classification" but "timbre discrimination." Here is my hypothesis: when we hear a note with a certain timbre, we compare it against timbres stored in our memory. If it closely matches an existing memory, we group it into that category; if it differs significantly, we treat it as a new timbre. The "memory" of timbres consists partly of previously learned examples (analogous to a training set), but more importantly, it is dynamically built from the earlier parts of the same audio being listened to—essentially performing dynamic timbre learning and online clustering. This "dynamic" nature is key to achieving our research objectives.
+
+本研究将此任务拆解为两部分：
+
+This study decomposes the task into two stages:
+
+1. 先实现“音色无关转录”，即不根据音色分类，得到的是所有音色的音符。模型参考BasicPitch，并进行了改进。（幅度编码）
++ Timbre-agnostic transcription: First, transcribe all notes without relying on timbre-based classification. The model is inspired by BasicPitch but includes improvements. (magnitude encoding)
+2. 再实现“音色分离转录”，基本思想是对音色进行聚类，给“音色无关转录”的音符分配标签。（方向编码）
++ Timbre-separated transcription: Then, assign timbre labels to the notes obtained from stage 1 through clustering timbre embeddings obtained at this stage. (directional encoding)
 
 本研究的贡献：
-1. 低成本、高精度数据集构建方法，客服了传统数据集采集、标注缺陷
-2. 轻量级音色无关转录模型（参数量、运行开销减半，性能与基线持平），训练参数量只有18978，但有不错的泛化性和精度
-3. 提出了联想记忆机制，实现了普适性的音色分离转录
-4. 针对聚类的缺陷进行了多种后处理优化
 
-一个失败了但我认为很有潜力的做法是，对每个时频单元编码为一个音色向量，其幅度表示音符在此的概率，方向表示音色。类似Hinton的Capsule。我认为模型规模足够大时可以实现。
+Contributions of this research:
 
+1. 轻量级音色无关转录模型（参数量、运行开销减半，性能与基线持平），训练参数量只有18978，但有不错的泛化性和精度。
++ A lightweight timbre-agnostic transcription model, halving both parameter count and computational overhead compared to the baseline, while maintaining comparable performance. The model has only 18,978 trainable parameters yet demonstrates strong generalization and accuracy.
+2. 在音色无关转录基础上拓展出一个音色编码分支，能实现2-3个乐器的70%以上正确分离。
++ An extended timbre-encoding branch built upon the timbre-agnostic transcription model, capable of correctly separating 2–3 instruments with over 70% accuracy.
+3. 针对“音乐转录”提出了专门的深度聚类后处理方法，在音符级进行聚类提高了鲁棒性、减少了计算量。
++ A novel deep clustering post-processing method specifically designed for music transcription, which performs clustering at the note level, enhancing robustness and reducing computational cost.
+4. 优化了损失函数：修正了BasciPitch的加权策略；使用对比学习损失InfoNCE代替传统深度聚类相似度损失（对相似度矩阵求MSE），得到了更好的编码效果。
++ Optimized loss functions: (a) refined the weighting strategy of BasicPitch; (b) replaced conventional deep clustering loss that applies MSE on affinity matrix with contrastive learning losses InfoNCE, yielding superior embedding quality.
+
+## 展望 Future Work
+虽然上文提到了“记忆”，但本研究其实并没有实现类似的机制。最初的构想是：让模型先学一遍输入的音频，得到“记忆”，再重新过一遍输入，从记忆中联想（查询）得到最终的结果。在“记忆”中，其实相似的音色就已经聚集在一起了。我尝试了Hopfield Network，并拓展到各种注意力机制，结果发现在音色编码网络不够强大的时候，记忆的引入反而会导致类别融合，即“记忆模糊”。理论上分析，Hopfield的最大记忆容量约为编码维度的0.14倍，如果要分离3种音色，编码维度需要达到22。对于浏览器中运行的模型，这个维度有点大了。所以我觉得模型规模增大时，该机制可能会有用。在 [./model/attention.py](./model/attention.py) 中留存了我们探索过的结构。具体的想法参看[./model/memory.md](./model/memory.md)。
+
+Although "memory" was mentioned above, this study did not implement such a mechanism. The original idea was to let the model first process the input audio once to build a "memory," then re-process the same input while querying this memory to produce the final output. In this memory, similar timbres would already be grouped together. I experimented with Hopfield Networks and extended them into attention mechanisms. However, when the timbre-encoding network lacked sufficient capacity, introducing memory led to category merging—a phenomenon I call "memory blurring." Theoretically, a Hopfield network’s maximum memory capacity is roughly 0.14 times the encoding dimension. To separate three timbres, the encoding dimension would need to be at least 22 — an impractical size for browser-deployable models. Thus, I suspect this memory mechanism may become viable only with larger models. The explored architectures are preserved in [./model/attention.py](./model/attention.py). Refer to [./model/memory.md](./model/memory.md) for more detailed descriptions.
+
+本研究设计了一个合成数据的方法，但是效果远远不如真实数据集。论文中对其缺点进行了讨论，其中一个问题是：“缺少音域限制”，因为相邻音高的音色可以近似为不变，但是跨度大了确实有很大的不同。而可行的解决方法是：划分频带生成音符、限制生成范围。当然现在有很多模拟人工谱曲的算法，直接拿过来用可能效果会好很多。
+
+I also designed a synthetic data generation method, but its performance fell far short of real-world datasets. The paper discusses its limitations, one major issue being the "lack of pitch-range constraints": while timbre can be approximated as invariant across adjacent pitches, it varies significantly over wider intervals. A potential solution is to generate notes within specific frequency bands. Of course, many modern algorithms simulate human-like composition; integrating such methods might yield much better results.
+
+虽然目标是“不依赖训练集”，但是为了学习到普适的编码，训练集还是越大越好。模型有泛化性不等于训练集很小。
+
+Although the ultimate goal is "training-set independence," a large and diverse training set remains essential for learning generalizable representations. Good generalization does not imply that a small training set suffices.
+
+本研究的两个分支相当于分别进行了幅度和方向的编码，而我认为直接编码一个特征，其方向表示音色、幅度表示强度，类似Hinton的Capsule，是一个有希望的方向。本项目的小网络不具备这样的编码能力（失败了），但我认为模型规模足够大时可以实现。
+
+The two branches of this model encode magnitude and direction separately. I believe a more promising approach would be to directly learn a unified feature vector where direction represents timbre and magnitude represents intensity—akin to Hinton’s Capsule Networks. Unfortunately, small networks seem to lack the capacity to achieve such representation (I tried but failed). However, I remain optimistic that sufficiently large models could realize this idea.
+
+极力推荐《Harmonic Frequency-Separable Transformer for Instrument-Agnostic Music Transcription》，虽然没有分离音色，但是里面用到了很多我认为有希望（但是我没成功）的做法，比如：谐波卷积、attention与音色。
+
+I highly recommend the paper "Harmonic Frequency-Separable Transformer for Instrument-Agnostic Music Transcription." Although it does not perform timbre separation, it employs several techniques I considered highly promising (though they're not very useful to this study), such as harmonic convolution and attention mechanisms for timbre modeling.
+
+关于相位：音乐信号的相位作用不大（参考加法合成器）。由于本研究的任务不需要重构音频，所以可以直接抛弃相位。即使要重建音乐，我猜丢了相位也无关紧要。
+
+Regarding phase: phase information plays a minimal role in musical signals (as evidenced by additive synthesizers). Since our task does not require audio reconstruction, phase can be safely discarded. Even if audio reconstruction were needed, I suspect that losing phase information would have negligible impact.
 
 ## 文件夹结构
 ```
-├─basicamt “音色无关转录”
+├─basicamt “音色无关转录” our timbre-agnostic transcription model
 ├─basicpitch 作为“音色无关转录”的baseline，对比用
 ├─onsets_frames 作为“音色无关转录”的baseline，对比用
 |
-├─septimbre “音色分离转录”
+├─septimbre “音色分离转录” our timbre-separated transcription model
+├─Tanaka 作为“音色分离转录”的baseline，对比用
 |
 ├─evaluate 模型评估
 |
@@ -39,19 +90,33 @@
 ```
 
 ## Usage
-### 在线使用
+### 在线使用 online usage
 本项目已经集成到 [noteDigger](https://madderscientist.github.io/noteDigger/) 中，可以便捷地进行人工后处理、或辅助人工扒谱。使用方法见下：
+
+This project has been integrated into [noteDigger](https://madderscientist.github.io/noteDigger/), enabling convenient manual post-processing or assisting manual transcription. Usage instructions are provided below:
 
 ![in noteDigger](readmeSRC/how_to_use.png)
 
-### 训练/开发
+### 开发使用 for development
+本项目已经将主要的训练结果导出为ONNX，只要配置好运行时就可以使用。模型的输入输出可以参看每个文件夹下的`use_model.ipynb`中导出为ONNX的部分。
+
+The main training results of this project have been exported to ONNX, and they can be used once the runtime environment is properly configured. For details on the model's input and output, please refer to the ONNX export section in `use_model.ipynb` in each folder.
+
+### 训练 for training
 本项目使用 `uv` 管理环境，请先确保已经安装。然后在本项目根目录下，执行：
+
+This project uses `uv` to manage the environment. Please ensure it has been installed. Then, in the root directory of this project, execute:
+
 ```
 uv sync
 ```
-随后就可以执行 `.ipynb` 了。第一步是准备数据，按照data文件夹所说进行操作。
+随后就可以执行 `.ipynb` 了。第一步是准备数据，按照[data](./data/README.md)文件夹所说进行操作。
+
+Then you can execute `. ipynb`. The first step is to prepare the data and follow the instructions in the [data](./data/README.md) folder.
 
 此外，项目依赖 `ffmpeg` ，需要可以直接通过命令行调用，需要额外安装。
+
+In addition, the project relies on `ffmpeg`, which should be able to be directly called through the command line and requires additional installation.
 
 ## 碎碎念
 这其实是我的毕业设计，自主选题。大学四年甚至高中的种种共同造就了这个课题。

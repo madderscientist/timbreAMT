@@ -23,14 +23,6 @@ CBR(16, 8, kernel_size=(25, 3), dilation=(3, 1), padding="same", stride=1)
 
 一开始使用cat进行跨层处理，然而发现用残差连接在效果不变的情况下，还减少了参数量。
 
-
-### 将CQT纳入参数
-具体过程见下文“训练”一章，本处主要说结构。CQT使用了基于降采样的算法，八个八度共用参数以保持“轻量”。有研究说时频变换并非最优特征表示方法（比如Tasnet这种autoencoder），我也不认为目前的窗形状最合理（看到有论文说高斯窗最好，但我懒得调参用的是blackmanharris窗），所以应该让模型在理论的基础上微调。我认为利用CQT参数是进一步轻量化模型的关键。
-
-此外将其加入模型也免去了后续在网页部署的时候用js实现CQT，端到端才是最快的。
-
-然而实验证明，CQT纳入训练只会在训练集上表现更好，泛化性有所损失。所以不应该将CQT纳入训练
-
 ### 损失
 两个损失（frame和onset）都使用了focal loss；BasicPitch的frame用的是BCE，只有onset用了加权的BCE。
 设计之初，受VAE训练的影响，在focal loss之外，我还加上了加权的MSE，但是收敛缓慢，效果不好，故删去。
@@ -58,12 +50,21 @@ onset_loss = focal_loss(onset_ref, onset, gamma=1, alpha=0.06)
 loss = note_loss + onset_loss
 ```
 
+### 将CQT纳入参数
+具体过程见下文“训练”一章，本处主要说结构。CQT使用了基于降采样的算法，八个八度共用参数以保持“轻量”。有研究说时频变换并非最优特征表示方法（比如Tasnet这种autoencoder），我也不认为目前的窗形状最合理（看到有论文说高斯窗最好，但我懒得调参用的是blackmanharris窗），所以应该让模型在理论的基础上微调。我认为利用CQT参数是进一步轻量化模型的关键。
 
+此外将其加入模型也免去了后续在网页部署的时候用js实现CQT，端到端才是最快的。
+
+**然而实验证明，CQT纳入训练只会在训练集上表现更好，泛化性有所损失。所以不应该将CQT纳入训练。**
 
 ## 训练
-在 `RTX4090`上训练。训练分两阶段，完全使用[随机合成数据](../data/septimbre/make_basicamt.ipynb)，并加入高斯噪声进行数据增强。BasicPitch有三个损失：pitch、frame、onset，但是其在论文中说没有pitch损失效果也差不多，所以我就没做。
+在 `RTX4090`上训练。训练分两阶段，用两类数据训练：
+1. 使用[MusicNetEM](./train_basicamt_musicnet.ipynb)
+2. 完全使用[随机合成数据](../data/septimbre/make_basicamt.ipynb)，并加入高斯噪声进行数据增强。
 
 一开始尝试使用单曲多音色训练（单音色乐曲相加），但结果不佳。于是转为每次只输入一种音色，但是扩大了音色数目、单曲内音符更密集。
+
+下面的训练过程针对“可学习CQT”：为了保证稳定性，分为两阶段训练，只有第二阶段才微调CQT参数。
 
 ### 第一阶段：学会一种乐器
 以预计算的CQT为输入，使用了几种钢琴的音色，帮助模型快速学会利用频谱信息。训练代码见[train_basicamt.ipynb](train_basicamt.ipynb)。
@@ -133,7 +134,9 @@ loss = note_loss + onset_loss
 
 最后导出为可以直接加载的模型：[model](best_basicamt_model.pth)，其使用方法见[use_model.ipynb](use_model.ipynb)，得到的ONNX为[basicamt_44100.onnx](basicamt_44100.onnx)。
 
-将CQT纳入训练参数是一定有好处的。曾做过一个实验，第二阶段训练仍然使用第一阶段的数据集，发现损失还能再下降，说明CQT的参数选择确实有优化的空间。
+~~将CQT纳入训练参数是一定有好处的。曾做过一个实验，第二阶段训练仍然使用第一阶段的数据集，发现损失还能再下降，说明CQT的参数选择确实有优化的空间。~~
+
+上面仅仅用“损失”评价效果是不对的。实际上CQT会加剧对训练数据分布的过拟合，导致泛化性下降，在别的数据集上效果不行。在没有很大很丰富的训练数据时不建议使用可学习CQT。
 
 ## 音符创建（二值化）
 这一步完全照搬BasicPitch，实现在[postprocess.py](../utils/postprocess.py)的output_to_notes_polyphonic函数。下面是对BasicPitch项目文件结构的浅析：
