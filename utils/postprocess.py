@@ -221,9 +221,13 @@ def cluster_notes(
     from sklearn.cluster import SpectralClustering
     from sklearn.metrics.pairwise import cosine_similarity
 
-    similarity_matrix = cosine_similarity(np.array(embeddings))
     spectral = SpectralClustering(n_clusters=n_clusters, affinity='precomputed', assign_labels="cluster_qr")
-    labels = spectral.fit_predict(np.exp(similarity_matrix))
+    # ang_dist = 1 - cosine_similarity(np.array(embeddings))
+    # sigma = np.percentile(ang_dist, 50)
+    # affinity = np.exp(-ang_dist / sigma**2)
+    # experiments show that, exp(cos_sim) works better than exp(-(1 - cos_sim) / sigma**2)
+    affinity = np.exp(cosine_similarity(np.array(embeddings)))
+    labels = spectral.fit_predict(affinity)
 
     clustered_notes = [[] for _ in range(n_clusters)]
     for label, note in zip(labels, note_events):
