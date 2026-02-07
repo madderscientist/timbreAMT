@@ -222,7 +222,7 @@ class EnergyNorm(nn.Module):
     1: 能量的归一化
     2: 都输出
     """
-    def __init__(self, output_type = 1, log_scale = False):
+    def __init__(self, output_type = 1, log_scale = True):
         super().__init__()
         self.output_type = output_type
         self.log_scale = log_scale

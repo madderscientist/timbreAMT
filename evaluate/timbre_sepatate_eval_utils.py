@@ -235,16 +235,26 @@ def amt_mix_dataset(model, dataset_folder, mix, output_folder):
 ### 计算帧级&音符级的评价指标
 from instrument_agnostic_eval_utils import frame_eval, find_best_threshold, find_best_onset_threshold, _freqmap
 from itertools import permutations
-from utils.postprocess import cluster_notes
+from utils.postprocess import cluster_notes, cluster_frames, output_to_notes_polyphonic
 from utils.midiarray import notes2numpy
 
-def eval_sep_note(frame: np.ndarray, onset: np.ndarray, emb: np.ndarray, midi: np.ndarray, frame_thresh = 0.5, onset_thresh = 0.4, s_per_frame = 256 / 22050, freqmap = _freqmap):
+def eval_sep_note(
+        frame: np.ndarray,
+        onset: np.ndarray,
+        emb: np.ndarray,
+        midi: np.ndarray,
+        frame_thresh = 0.5,
+        onset_thresh = 0.4,
+        s_per_frame = 256 / 22050,
+        freqmap = _freqmap,
+        frame_level = False
+    ):
     if midi.ndim != 3:
         raise ValueError("midi should be of shape (num_instruments, F, T)")
     n_clusters = midi.shape[0]
     est_notes = cluster_notes(
         frame, onset, emb, n_clusters,
-        midi_offset = 0,
+        midi_offset = 0,    # !!!
         frame_thresh=frame_thresh,
         onset_thresh=onset_thresh,
         min_note_len=7.5,
@@ -280,12 +290,11 @@ def eval_sep_note(frame: np.ndarray, onset: np.ndarray, emb: np.ndarray, midi: n
         if loss < lossmin:
             lossmin = loss
             best_order = order
-
     if best_order is None:
         raise ValueError("No valid permutation found for evaluation.")
-
     order = list(best_order)
 
+    # 音符级评估
     actual_notes = array2notes(midi)
     ps = []
     rs = []
@@ -298,7 +307,7 @@ def eval_sep_note(frame: np.ndarray, onset: np.ndarray, emb: np.ndarray, midi: n
         est_note_events.sort(key=lambda x: x[0])  # 按onset排序
         gt_note_events.sort(key=lambda x: x[0])  # 按onset排序
 
-        # 转换为mir_eval所需格式
+        # Convert to mir_eval format
         est_intervals = np.array([[onset * s_per_frame, offset * s_per_frame] for onset, offset, _, _ in est_note_events])
         est_pitches = np.array([freqmap[note] for _, _, note, _ in est_note_events])
         ref_intervals = np.array([[onset * s_per_frame, offset * s_per_frame] for onset, offset, _ in gt_note_events])
@@ -309,7 +318,7 @@ def eval_sep_note(frame: np.ndarray, onset: np.ndarray, emb: np.ndarray, midi: n
             est_intervals,
             est_pitches,
             onset_tolerance=0.05,
-            # 不关心offset
+            # don't care offset
             offset_ratio=None # type: ignore
         )
         ps.append(p)
@@ -321,10 +330,74 @@ def eval_sep_note(frame: np.ndarray, onset: np.ndarray, emb: np.ndarray, midi: n
     R = np.mean(rs)
     F = np.mean(fs)
     AvgOverlap = np.mean(avg_overlaps)
-    return P, R, F, AvgOverlap
+
+    if not frame_level:
+        return (P, R, F, AvgOverlap), (-1, -1, -1, -1)
+
+    # 对比：先帧级聚类再创建音符
+    frame_cluster = cluster_frames(frame, emb, n_clusters, frame_thresh)    # (n_clusters, F, T)
+    # 用PIT找到最优的对应顺序
+    lossmin = float("inf")
+    best_order = None
+    for order in permutations(range(len(frame_cluster))):
+        permuted = [frame_cluster[i] for i in order]
+        loss = np.sum(np.power(midi_clip - np.stack(permuted, axis=0), 2))
+        if loss < lossmin:
+            lossmin = loss
+            best_order = order
+    if best_order is None:
+        raise ValueError("No valid permutation found for evaluation.")
+    order = list(best_order)
+
+    f_ps = []
+    f_rs = []
+    f_fs = []
+    f_avg_overlaps = []
+    for i in range(n_clusters):
+        classi = frame_cluster[order[i]]
+        gt_note_events = actual_notes[i]
+        est_note_events = output_to_notes_polyphonic(
+            classi,
+            onset,
+            frame_thresh=frame_thresh,
+            onset_thresh=onset_thresh,
+            min_note_len=7.5,
+            infer_onsets=True,
+            melodia_trick=True,
+            neighbor_trick=False,
+            energy_tol=11,
+            midi_offset=0   #!!!
+        )
+        est_note_events.sort(key=lambda x: x[0])
+        gt_note_events.sort(key=lambda x: x[0])
+        # Convert to mir_eval format
+        est_intervals = np.array([[onset * s_per_frame, offset * s_per_frame] for onset, offset, _, _ in est_note_events])
+        est_pitches = np.array([freqmap[note] for _, _, note, _ in est_note_events])
+        ref_intervals = np.array([[onset * s_per_frame, offset * s_per_frame] for onset, offset, _ in gt_note_events])
+        ref_pitches = np.array([freqmap[note] for _, _, note in gt_note_events])
+        p, r, f, avg_overlap_ratio = mir_eval.transcription.precision_recall_f1_overlap(
+            ref_intervals,
+            ref_pitches,
+            est_intervals,
+            est_pitches,
+            onset_tolerance=0.05,
+            # don't care offset
+            offset_ratio=None # type: ignore
+        )
+        f_ps.append(p)
+        f_rs.append(r)
+        f_fs.append(f)
+        f_avg_overlaps.append(avg_overlap_ratio)
+    
+    f_P = np.mean(f_ps)
+    f_R = np.mean(f_rs)
+    f_F = np.mean(f_fs)
+    f_AvgOverlap = np.mean(f_avg_overlaps)
+
+    return (P, R, F, AvgOverlap), (f_P, f_R, f_F, f_AvgOverlap)
 
 
-def evaluate_sep_note_dataset(npyfolder, frame_thresh = 0.5, onset_thresh = 0.4, mix = 2, log = True):
+def evaluate_sep_note_dataset(npyfolder, frame_thresh = 0.5, onset_thresh = 0.4, mix = 2, log = True, frame_level = True):
     """
     在给定阈值的时候，评估分离效果
     """
@@ -332,6 +405,10 @@ def evaluate_sep_note_dataset(npyfolder, frame_thresh = 0.5, onset_thresh = 0.4,
     rs = []
     fs = []
     overlaps = []
+    f_ps = []
+    f_rs = []
+    f_fs = []
+    f_overlaps = []
     for f in os.listdir(npyfolder):
         if not ifNmix(f, mix):
             continue
@@ -341,27 +418,40 @@ def evaluate_sep_note_dataset(npyfolder, frame_thresh = 0.5, onset_thresh = 0.4,
         note = result['frame']  # (freqs, times)
         midi = result['midi']  # (mix, freqs, times)
         onset = result['onset']  # (freqs, times)
-        p, r, f, overlap = eval_sep_note(
+        (p, r, f, overlap), (f_p, f_r, f_f, f_overlap) = eval_sep_note(
             frame=note,
             onset=onset,
             emb=emb,
             midi=midi,
             frame_thresh=frame_thresh,
             onset_thresh=onset_thresh,
+            frame_level=frame_level
         )
         ps.append(p)
         rs.append(r)
         fs.append(f)
         overlaps.append(overlap)
+        f_ps.append(f_p)
+        f_rs.append(f_r)
+        f_fs.append(f_f)
+        f_overlaps.append(f_overlap)
 
     P = np.mean(ps)
     R = np.mean(rs)
     F = np.mean(fs)
     OVERLAP = np.mean(overlaps)
+    f_P = np.mean(f_ps)
+    f_R = np.mean(f_rs)
+    f_F = np.mean(f_fs)
+    f_OVERLAP = np.mean(f_overlaps)
 
     if log:
         print("=== Separation Note-level Evaluation ===")
-        print(f"| Precision | Recall | F | Overlap |")
-        print(f"| {P:.5f} | {R:.5f} | {F:.5f} | {OVERLAP:.5f} |")
+        if frame_level:
+            print(f"| Precision | Recall | F | Overlap | P_f | R_f | F_f | Overlap_f |")
+            print(f"| {P:.5f} | {R:.5f} | {F:.5f} | {OVERLAP:.5f} | {f_P:.5f} | {f_R:.5f} | {f_F:.5f} | {f_OVERLAP:.5f} |")
+        else:
+            print(f"| Precision | Recall | F | Overlap |")
+            print(f"| {P:.5f} | {R:.5f} | {F:.5f} | {OVERLAP:.5f} |")
 
-    return P, R, F, OVERLAP
+    return (P, R, F, OVERLAP), (f_P, f_R, f_F, f_OVERLAP)

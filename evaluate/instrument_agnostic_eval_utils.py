@@ -54,7 +54,8 @@ from utils.midiarray import freq_map, roll2evalarray, array2notes
 from utils.postprocess import min_len_
 import mir_eval
 
-_freqmap = freq_map((24, 107), 440)
+_freqmap_offset = 24
+_freqmap = freq_map((_freqmap_offset, _freqmap_offset + 83), 440)
 
 def frame_eval(note: np.ndarray, midi: np.ndarray, threshold = 0.5, s_per_frame = 256 / 22050, freqmap = _freqmap):
     """

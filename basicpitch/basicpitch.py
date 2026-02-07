@@ -41,11 +41,11 @@ class BasicPitch(nn.Module):
         # x是CQT
         # 下面这段是BasicPitch的CQT后处理
         power = torch.sum(x.pow(2), dim=1, keepdim=True)
-        log_power = 10 * torch.log10(power + 1e-10) # (batch, 1, note, time)
+        log_power = 10 * torch.log10(power + 1.01e-8) # (batch, 1, note, time)
         log_power_min = torch.amin(log_power, dim=(2, 3), keepdim=True)
         log_power_offset = log_power - log_power_min
         log_power_offset_max = log_power_offset_max = torch.amax(log_power_offset, dim=(2, 3), keepdim=True)
-        log_power_normalized = self.CQT_BN(log_power_offset / (log_power_offset_max + 1e-10))
+        log_power_normalized = self.CQT_BN(log_power_offset / (log_power_offset_max + 1.01e-8))
         # 源代码harmonicstacking部分
         x = self.HCQT(log_power_normalized) # (batch, 8, 7*36, len)
         contours = self.contours(x) # (batch, 8, 7*36, len)

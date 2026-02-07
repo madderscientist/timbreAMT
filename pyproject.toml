@@ -14,8 +14,9 @@ dependencies = [
     "scikit-learn>=1.7.2",
     "mido>=1.2.10",
     "tqdm>=4.66.5",
-    "mirdata>=0.3.9",
+    "librosa>=0.11.0",
     "mir_eval>=0.8.0",
+    # "mirdata>=0.3.9", # mirdata is too old
     "ipykernel",
     # onnx export, to enable web inference
     "onnx",

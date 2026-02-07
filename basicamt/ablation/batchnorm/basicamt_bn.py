@@ -15,11 +15,11 @@ class EnergyNorm_BN(nn.Module):
         # x: CQT
         # BasicPitch的CQT后处理
         power = torch.sum(x.pow(2), dim=1, keepdim=True)
-        log_power = 10 * torch.log10(power + 1e-10) # (batch, 1, note, time)
+        log_power = 10 * torch.log10(power + 1.01e-8) # (batch, 1, note, time)
         log_power_min = torch.amin(log_power, dim=(2, 3), keepdim=True)
         log_power_offset = log_power - log_power_min
         log_power_offset_max = log_power_offset_max = torch.amax(log_power_offset, dim=(2, 3), keepdim=True)
-        return self.bn(log_power_offset / (log_power_offset_max + 1e-10))
+        return self.bn(log_power_offset / (log_power_offset_max + 1.01e-8)) # Keep EPS settings consistent with BasicAMT. Smaller the better but can't deploy to onnx
 
 class BasicAMT_BN(nn.Module):
     def __init__(self):

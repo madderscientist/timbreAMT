@@ -235,6 +235,36 @@ def cluster_notes(
     
     return clustered_notes
 
+import gc
+def cluster_frames(
+    frames: np.ndarray, # (n_freqs, n_frames)
+    emb: np.ndarray,    # (emb_dim, n_freqs, n_frames)
+    n_clusters: int,
+    frame_thresh: float,
+) -> np.ndarray:    # (n_clusters, n_freqs, n_frames)
+    mask = frames > frame_thresh  # (n_freqs, n_frames)
+    embeddings = emb[:, mask].T  # (num_selected_frames, emb_dim)
+
+    if embeddings.shape[0] > 22000:
+        print(f"Warning: clustering {embeddings.shape[0]} frames, switch to KMeans.")
+        from sklearn.cluster import KMeans
+        kmeans = KMeans(n_clusters=n_clusters, n_init='auto')
+        labels = kmeans.fit_predict(embeddings)
+    else:
+        from sklearn.cluster import SpectralClustering
+        from sklearn.metrics.pairwise import cosine_similarity
+        spectral = SpectralClustering(n_clusters=n_clusters, affinity='precomputed', assign_labels="cluster_qr")
+        affinity = np.exp(cosine_similarity(np.array(embeddings)))
+        labels = spectral.fit_predict(affinity)
+        del affinity
+
+    gc.collect()
+    result = np.zeros((n_clusters, *frames.shape), dtype=frames.dtype)
+    freq_idx, time_idx = np.where(mask)
+    # 将frames中被mask选中的元素按labels分类，填充到result
+    result[labels, freq_idx, time_idx] = frames[freq_idx, time_idx]
+    return result
+
 
 def OTSU_threshold(image: np.ndarray, bins: int = 256) -> float:
     """

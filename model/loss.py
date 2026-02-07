@@ -72,9 +72,8 @@ def InfoNCE_loss(embs, targets, temperature = 0.1):
         YTY = torch.matmul(Y, Y.t()) # [N, N]
         YTY.clamp_(max=1, min=0)
         # Mask out self-comparison
-        diag_mask = torch.eye(VTV.size(0), device=VTV.device).bool()
-        VTV.masked_fill_(diag_mask, float('-inf'))
-        YTY.masked_fill_(diag_mask, 0)
+        VTV.fill_diagonal_(float('-inf'))
+        YTY.fill_diagonal_(0)
 
         exp_VTV = torch.exp(VTV)
         pos_exp = exp_VTV * (YTY > 0.5).float()

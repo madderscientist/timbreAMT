@@ -73,7 +73,7 @@ I highly recommend the paper "Harmonic Frequency-Separable Transformer for Instr
 
 Regarding phase: phase information plays a minimal role in musical signals (as evidenced by additive synthesizers). Since our task does not require audio reconstruction, phase can be safely discarded. Even if audio reconstruction were needed, I suspect that losing phase information would have negligible impact.
 
-## 文件夹结构
+## 文件夹结构 Folder Structure
 ```
 ├─basicamt “音色无关转录” our timbre-agnostic transcription model
 ├─basicpitch 作为“音色无关转录”的baseline，对比用
@@ -97,6 +97,10 @@ This project has been integrated into [noteDigger](https://madderscientist.githu
 
 ![in noteDigger](readmeSRC/how_to_use.png)
 
+> 音色分离转录也已经部署，但是需要提供乐器种类。
+
+> Instrument-separated transcription has also been deployed, but the number of instrument classes is needed.
+
 ### 开发使用 for development
 本项目已经将主要的训练结果导出为ONNX，只要配置好运行时就可以使用。模型的输入输出可以参看每个文件夹下的`use_model.ipynb`中导出为ONNX的部分。
 
@@ -117,6 +121,10 @@ Then you can execute `. ipynb`. The first step is to prepare the data and follow
 此外，项目依赖 `ffmpeg` ，需要可以直接通过命令行调用，需要额外安装。
 
 In addition, the project relies on `ffmpeg`, which should be able to be directly called through the command line and requires additional installation.
+
+> 注意：我们发现EPS对模型结果影响很大（取对数时越小的EPS效果越好），但是太小的EPS在导出为ONNX运行于浏览器时，似乎会被认为是0，导致NaN。因此我们最终选择1.01e-8。
+
+> Note: We found that EPS has a significant impact on model performance (smaller EPS values lead to better results when taking the logarithm). However, if EPS is too small, it may be interpreted as zero when exported to ONNX and run in a browser, resulting in NaN values. Therefore, we ultimately selected 1.01e-8.
 
 ## 碎碎念
 这其实是我的毕业设计，自主选题。大学四年甚至高中的种种共同造就了这个课题。
