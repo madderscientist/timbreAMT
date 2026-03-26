@@ -5,6 +5,8 @@
 - septimbre_44100.onnx: sepamt_model.pth导出的输入为44100Hz的ONNX
 - septimbre_encoder_44100.onnx: sepamt_model.pth中encoder分支、适配44100Hz的ONNX
 
+关于转录分支请阅读 [basicamt/README.md](../basicamt/README.md)
+
 ## 音乐转录和音色编码是否相辅相成？
 
 - DicephNet: 共享一部分编码分支——发现效果变差了（情理之中，因为参数量少了）

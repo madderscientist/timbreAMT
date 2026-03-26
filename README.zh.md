@@ -2,10 +2,15 @@
 
 [English README](./README.md)
 
-# [A Lightweight Architecture for Multi-instrument Transcription with Practical Optimizations](https://arxiv.org/abs/2509.12712)👈论文
-目标是实现 轻量级的 音源分离 扒谱AI，其中音源分离不依赖训练集，而能对训练集之外的音色有普适性。
+#  [A Lightweight Two-Branch Architecture for Multi-Instrument Transcription via Note-Level Contrastive Clustering](https://arxiv.org/abs/2509.12712)👈论文
 
-- **轻量级**：为了让研究切切实实落地应用。最终比baseline轻量了一半，成功部署到[notedigger](https://madderscientist.github.io/noteDigger/)中。其实如今已经有很多很优秀的分离扒谱商品了，而转换为token、用大模型的方法实现也有一统所有领域的趋势（特指MT3）。所以选择轻量也是避其锋芒的做法。但轻量也极大限制了能用的技术。
+![Status](https://img.shields.io/badge/Status-Accepted%20by%20TISMIR-success)
+
+> **2026/03/26**: 论文被 **TISMIR** 接收啦！
+
+目标是实现 轻量级的 音源分离 扒谱AI，其中音源分离不依赖训练集、对训练集之外的音色有普适性。
+
+- **轻量级**：为了让研究切切实实落地应用。最终比baseline轻量了一半，成功部署到 [notedigger](https://madderscientist.github.io/noteDigger/) 中。其实如今已经有很多很优秀的分离扒谱商品了，而转换为token、用大模型的方法实现也有一统所有领域的趋势（特指MT3）。所以选择轻量也是避其锋芒的做法。但轻量也极大限制了能用的技术。
 - **音源分离**：根据音色进行分离，称为“盲源分离”更确切，因为目标是不依赖训练集。和一般的“源分离”不同的是，本任务直接在“音符”的层面进行分离，而不是重构分离后的频谱。
 - **扒谱**：学名“音乐转录”，结合“音源分离”指“扒带”，即输入为多音色音频，输出多轨音符，每一轨对应一种音色。
 

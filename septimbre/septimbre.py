@@ -159,7 +159,7 @@ class SepTimbreAMT(nn.Module):
     @staticmethod
     def loss(emb, mask, onset, targets):
         """
-        计算聚类损失和AMT损失
+        计算聚类损失和AMT损失 cluster loss & AMT loss
         emb: (batch, emb_dims, 7*12, time)
         mask: (batch, 7*12, time)
         onset: (batch, 7*12, time)
@@ -176,7 +176,7 @@ class SepTimbreAMT(nn.Module):
         return L_cluster, L_amt
 
 
-### 以下为实际部署时使用的模型
+### 以下为实际部署时使用的模型 for actual deployment
 class SepTimbreAMT_44100(nn.Module):
     """
     相比SepTimbreAMT，输入为44100Hz采样率的音频，会先进行降采样到22050Hz

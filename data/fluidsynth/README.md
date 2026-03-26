@@ -36,7 +36,7 @@
 > make
 > ```
 
-本项目提供了一个编译好的linux x64 fluidsynth.so.3.5.0
+本项目提供了一个编译好的 linux x64 fluidsynth.so.3.5.0
 
 ## Usage
 ```py
