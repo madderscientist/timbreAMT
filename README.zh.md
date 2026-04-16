@@ -2,11 +2,9 @@
 
 [English README](./README.md)
 
-#  [A Lightweight Two-Branch Architecture for Multi-Instrument Transcription via Note-Level Contrastive Clustering](https://arxiv.org/abs/2509.12712)👈论文
+#  [A Lightweight Two-Branch Architecture for Multi-Instrument Transcription via Note-Level Contrastive Clustering](https://doi.org/10.5334/tismir.300)👈论文
 
 ![Status](https://img.shields.io/badge/Status-Accepted%20by%20TISMIR-success)
-
-> **2026/03/26**: 论文被 **TISMIR** 接收啦！
 
 目标是实现 轻量级的 音源分离 扒谱AI，其中音源分离不依赖训练集、对训练集之外的音色有普适性。
 
@@ -85,6 +83,26 @@ uv sync
 此外，项目依赖 `ffmpeg` ，需要可以直接通过命令行调用，需要额外安装。
 
 > 注意：我们发现EPS对模型结果影响很大（取对数时越小的EPS效果越好），但是太小的EPS在导出为ONNX运行于浏览器时，似乎会被认为是0，导致NaN。因此我们最终选择1.01e-8。
+
+
+## 引用
+```
+@article{NoteCluster,
+    title = {A Lightweight Two‑Branch Architecture for Multi‑Instrument Transcription via Note‑Level Contrastive Clustering},
+    author = {Li, Ruigang and Zhu, Yongxu},
+    journal = {Transactions of the International Society for Music Information Retrieval},
+    keywords = {automatic music transcription, instrument separation, deep clustering, low-resource},
+    year = {2026},
+    month = {Apr},
+    volume = {9},
+    number = {1},
+    pages = {119--130},
+    issn = {2514-3298},
+    publisher = {Ubiquity Press},
+    doi = {10.5334/tismir.300},
+}
+```
+
 
 ## 碎碎念
 这其实是我的毕业设计，自主选题。大学四年甚至高中的种种共同造就了这个课题。

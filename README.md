@@ -2,11 +2,9 @@
 
 [中文README](./README.zh.md) \[We are very sorry, but almost all of this project is in Chinese\]
 
-#  [A Lightweight Two-Branch Architecture for Multi-Instrument Transcription via Note-Level Contrastive Clustering](https://arxiv.org/abs/2509.12712)👈paper
+#  [A Lightweight Two-Branch Architecture for Multi-Instrument Transcription via Note-Level Contrastive Clustering](https://doi.org/10.5334/tismir.300)👈paper
 
 ![Status](https://img.shields.io/badge/Status-Accepted%20by%20TISMIR-success)
-
-> **2026/03/26**: Our paper is now **accepted by TISMIR**!
 
 The goal of this project is to develop a lightweight AI model for audio source separation and music transcription that generalizes well beyond the training data — specifically, one that can handle unseen timbres without relying on pre-defined instrument categories in the training set.
 
@@ -27,7 +25,6 @@ This study decomposes the task into two stages:
 2. Timbre-separated transcription: Then, assign timbre labels to the notes obtained from stage 1 through clustering timbre embeddings obtained at this stage. (directional encoding)
 
 Contributions of this research:
-
 
 1. A lightweight timbre-agnostic transcription model, halving both parameter count and computational overhead compared to the baseline, while maintaining comparable performance. The model(transcription branch) has only 18,978 trainable parameters yet demonstrates strong generalization and accuracy.
 2. An extended timbre-encoding branch built upon the timbre-agnostic transcription model, capable of correctly separating 2–3 instruments with over 70% accuracy.
@@ -86,3 +83,21 @@ Then you can execute `.ipynb`. The first step is to prepare the data and follow 
 In addition, the project relies on `ffmpeg`, which should be able to be directly called through the command line and requires additional installation.
 
 > Note: We found that EPS has a significant impact on model performance (smaller EPS values lead to better results when taking the logarithm). However, if EPS is too small, it may be interpreted as zero when exported to ONNX and run in a browser, resulting in NaN values. Therefore, we ultimately selected 1.01e-8.
+
+## Citation
+```
+@article{NoteCluster,
+    title = {A Lightweight Two‑Branch Architecture for Multi‑Instrument Transcription via Note‑Level Contrastive Clustering},
+    author = {Li, Ruigang and Zhu, Yongxu},
+    journal = {Transactions of the International Society for Music Information Retrieval},
+    keywords = {automatic music transcription, instrument separation, deep clustering, low-resource},
+    year = {2026},
+    month = {Apr},
+    volume = {9},
+    number = {1},
+    pages = {119--130},
+    issn = {2514-3298},
+    publisher = {Ubiquity Press},
+    doi = {10.5334/tismir.300},
+}
+```
