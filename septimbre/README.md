@@ -1,16 +1,16 @@
 # Septimbre: 音色分离转录
 
-- sepamt_model.pth: 可以直接使用的模型
-- sepamt_note_branch.pth: 预训练的音色无关转录分支
-- septimbre_44100.onnx: sepamt_model.pth导出的输入为44100Hz的ONNX
-- septimbre_encoder_44100.onnx: sepamt_model.pth中encoder分支、适配44100Hz的ONNX
+- `sepamt_model.pth`: 可以直接使用的模型
+- `sepamt_note_branch.pth`: 预训练的音色无关转录分支
+- `septimbre_44100.onnx`: `sepamt_model.pth`导出的输入为44100Hz的ONNX
+- `septimbre_encoder_44100.onnx`: `sepamt_model.pth`中encoder分支、适配44100Hz的ONNX
 
 关于转录分支请阅读 [basicamt/README.md](../basicamt/README.md)
 
 ## 音乐转录和音色编码是否相辅相成？
 
-- DicephNet: 共享一部分编码分支——发现效果变差了（情理之中，因为参数量少了）
-- rescale: 用音色无关转录的结果对音色编码的中间feature进行强制的幅度缩放——效果变差了。这本是留给attention的“强制注意力”，虽然attention没用，但是我认为这也可以强调某些地方，让音色编码的时候只关注重要的时频单元。不过竟然起了副作用。
+- [DicephNet](./ablation/DicephNet): 共享一部分编码分支——发现效果变差了（情理之中，因为参数量少了）
+- [rescale](./ablation/rescale): 用音色无关转录的结果对音色编码的中间feature进行强制的幅度缩放——效果变差了。这本是留给attention的“强制注意力”，虽然attention没用，但是我认为这也可以强调某些地方，让音色编码的时候只关注重要的时频单元。不过竟然起了副作用。
 
 因此这两个任务变为了独立的分支，仅仅共用CQT频谱，不再有交集。
 
@@ -40,4 +40,12 @@ layernorm专注于某个token，instancenorm使用的是全局，因此我认为
 
 ## 编码维度取多少？
 
-测试了12和16，发现16几乎没有提升，甚至有不如。所以选择了12。更少的维度没有实验。
+测试了12和16，发现16几乎没有提升，甚至有不如。所以选择了12。粗略尝试了一下8，分离效果普遍变差了（参数量也减少了；但没有进行大量实验）。更少的维度没有实验。
+
+## 可能的改进
+
+- 现在的分离存在明显的频带划分现象。猜测可能是因为HCQT补零导致的。因此可能可以增加一个CQT的八度分析
+- 出于运行效率的考量，现在的hop还是大了一些。减小hop应该是可以提升效果的
+- 由于使用了blackmanharris窗，导致滤波器带宽变为矩形窗的4倍，因此可以适当增加CQT的Q值以实现更精细的频率提取。这会增加滤波器时域长度，也可以一定程度上弥补hop太大导致的稀疏。本项目出于计算量的考量没有使用
+- 增加参数量应该可以取得更好的效果
+- 数据集可以加入一些合成的，而不是仅仅musicnet

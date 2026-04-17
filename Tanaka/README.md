@@ -1,4 +1,4 @@
-# "音色分离转录"Baseline——BasicPitch
+# "音色分离转录"Baseline —— Tanaka deep clustering
 
 MULTI-INSTRUMENT MUSIC TRANSCRIPTION BASED ON DEEP SPHERICAL CLUSTERING OF SPECTROGRAMS AND PITCHGRAMS
 
@@ -15,3 +15,22 @@ MULTI-INSTRUMENT MUSIC TRANSCRIPTION BASED ON DEEP SPHERICAL CLUSTERING OF SPECT
 
 ## 导出失败
 疑似pytorch的bug。导出onnx失败，encoder的动态维度一直被固化
+
+--------
+
+# "Timbre-Separation Transcription" Baseline —— Tanaka deep clustering
+
+Since the original paper did not open-source their code, the following parameters were configured based on empirical experience and adaptation to this project:
+
+- MultiPitch Estimation: Utilizes my pre-trained BasicAMT model with fixed parameters.
+- STFT Settings: The original paper used a 2048-point FFT for audio sampled at 44100Hz. Since this project uses a 22050Hz sampling rate, a 1024-point FFT is used to maintain the same frequency resolution.
+- Hop Length: Maintained the original 11ms hop size (which aligns with this project's settings).
+- Architecture Changes: The audio separation branch was removed due to the lack of supervised data.
+- BiLSTM: The Hidden Size is set to 256. While this seems reasonable, the parameter count is still massive.
+- Embedding Size: Set to 12, consistent with my other models.
+- Loss Function: Adopted my custom loss function, as it has been proven to be more effective.
+
+The disadvantage of this model is obvious - there are too many parameters, making it very easy to overfit, resulting in poor evaluation performance. Perhaps I cut off the supervised branch for audio separation, which resulted in a decrease in performance.
+
+## Issue: Suspected PyTorch bug.
+ONNX export failed; the dynamic dimensions of the encoder remain固化 (hardcoded/fixed) instead of remaining dynamic.
